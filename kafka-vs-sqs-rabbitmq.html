@@ -211,13 +211,13 @@
     <li><a href="#delivery">Delivery Semantics &amp; Failure Handling</a></li>
     <li><a href="#ordering">Ordering Guarantees — The Subtle Stuff</a></li>
     <li><a href="#backpressure">Backpressure &amp; Flow Control</a></li>
-    <li><a href="#comparison">Full Comparison Matrix</a></li>
     <li><a href="#kinesis">AWS Kinesis &amp; Other Tools</a></li>
     <li><a href="#use-cases">Use Cases: Log-Based vs Memory-Based Brokers</a></li>
     <li><a href="#decision">Decision Framework</a></li>
     <li><a href="#production">Production War Stories &amp; Gotchas</a></li>
     <li><a href="#interview">System Design Interview Cheat Sheet</a></li>
     <li><a href="#references">References</a></li>
+    <li><a href="#comparison">Appendix: Full Comparison Matrix</a></li>
   </ol>
 </nav>
 
@@ -405,6 +405,82 @@
     <div class="caption">Fig 2. Kafka replication. The leader handles all I/O; followers pull asynchronously. ISR set determines durability guarantees.</div>
   </div>
 
+  <h4>Consumer Groups &amp; Partition Assignment</h4>
+  <div class="diagram-box">
+    <svg viewBox="0 0 820 380" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif" style="max-width:820px;">
+      <defs>
+        <marker id="arrowBlue2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#0969da"/></marker>
+        <marker id="arrowPurple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#8250df"/></marker>
+      </defs>
+      <text x="410" y="22" text-anchor="middle" fill="#0969da" font-size="14" font-weight="700">Kafka Consumer Groups — Parallel Consumption</text>
+
+      <!-- Topic with 4 partitions -->
+      <text x="200" y="55" text-anchor="middle" fill="#1f2328" font-size="12" font-weight="600">Topic: orders (4 partitions)</text>
+      <rect x="40" y="65" width="140" height="35" rx="5" fill="#eef1f5" stroke="#0969da" stroke-width="1.5"/>
+      <text x="110" y="87" text-anchor="middle" fill="#0969da" font-size="11" font-weight="600">P0</text>
+      <rect x="190" y="65" width="140" height="35" rx="5" fill="#eef1f5" stroke="#0969da" stroke-width="1.5"/>
+      <text x="260" y="87" text-anchor="middle" fill="#0969da" font-size="11" font-weight="600">P1</text>
+      <rect x="40" y="108" width="140" height="35" rx="5" fill="#eef1f5" stroke="#0969da" stroke-width="1.5"/>
+      <text x="110" y="130" text-anchor="middle" fill="#0969da" font-size="11" font-weight="600">P2</text>
+      <rect x="190" y="108" width="140" height="35" rx="5" fill="#eef1f5" stroke="#0969da" stroke-width="1.5"/>
+      <text x="260" y="130" text-anchor="middle" fill="#0969da" font-size="11" font-weight="600">P3</text>
+
+      <!-- Consumer Group A (2 consumers) -->
+      <rect x="460" y="42" width="340" height="115" rx="8" fill="#f6f8fa" stroke="#1a7f37" stroke-width="2"/>
+      <text x="630" y="62" text-anchor="middle" fill="#1a7f37" font-size="12" font-weight="700">Consumer Group A (order-service)</text>
+      <rect x="480" y="75" width="140" height="30" rx="5" fill="#fff" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="550" y="95" text-anchor="middle" fill="#1a7f37" font-size="10" font-weight="600">Consumer A1 → P0, P1</text>
+      <rect x="480" y="112" width="140" height="30" rx="5" fill="#fff" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="550" y="132" text-anchor="middle" fill="#1a7f37" font-size="10" font-weight="600">Consumer A2 → P2, P3</text>
+      <text x="720" y="95" text-anchor="middle" fill="#656d76" font-size="9">Each partition</text>
+      <text x="720" y="108" text-anchor="middle" fill="#656d76" font-size="9">assigned to</text>
+      <text x="720" y="121" text-anchor="middle" fill="#656d76" font-size="9">exactly ONE</text>
+      <text x="720" y="134" text-anchor="middle" fill="#656d76" font-size="9">consumer</text>
+
+      <!-- Consumer Group B (4 consumers) -->
+      <rect x="460" y="175" width="340" height="150" rx="8" fill="#f6f8fa" stroke="#8250df" stroke-width="2"/>
+      <text x="630" y="195" text-anchor="middle" fill="#8250df" font-size="12" font-weight="700">Consumer Group B (analytics-service)</text>
+      <rect x="480" y="208" width="130" height="25" rx="5" fill="#fff" stroke="#8250df" stroke-width="1.5"/>
+      <text x="545" y="225" text-anchor="middle" fill="#8250df" font-size="10" font-weight="600">Consumer B1 → P0</text>
+      <rect x="480" y="238" width="130" height="25" rx="5" fill="#fff" stroke="#8250df" stroke-width="1.5"/>
+      <text x="545" y="255" text-anchor="middle" fill="#8250df" font-size="10" font-weight="600">Consumer B2 → P1</text>
+      <rect x="480" y="268" width="130" height="25" rx="5" fill="#fff" stroke="#8250df" stroke-width="1.5"/>
+      <text x="545" y="285" text-anchor="middle" fill="#8250df" font-size="10" font-weight="600">Consumer B3 → P2</text>
+      <rect x="480" y="298" width="130" height="25" rx="5" fill="#fff" stroke="#8250df" stroke-width="1.5"/>
+      <text x="545" y="315" text-anchor="middle" fill="#8250df" font-size="10" font-weight="600">Consumer B4 → P3</text>
+      <text x="700" y="260" text-anchor="middle" fill="#656d76" font-size="9">Max parallelism =</text>
+      <text x="700" y="273" text-anchor="middle" fill="#656d76" font-size="9"># of partitions</text>
+
+      <!-- Arrows from partitions to Group A -->
+      <line x1="180" y1="82" x2="460" y2="82" stroke="#1a7f37" stroke-width="1.2" marker-end="url(#arrowGreen)"/>
+      <line x1="330" y1="82" x2="460" y2="90" stroke="#1a7f37" stroke-width="1.2" marker-end="url(#arrowGreen)"/>
+      <line x1="180" y1="125" x2="460" y2="120" stroke="#1a7f37" stroke-width="1.2" marker-end="url(#arrowGreen)" stroke-dasharray="4,3"/>
+      <line x1="330" y1="125" x2="460" y2="127" stroke="#1a7f37" stroke-width="1.2" marker-end="url(#arrowGreen)" stroke-dasharray="4,3"/>
+
+      <!-- Arrows from partitions to Group B -->
+      <line x1="110" y1="143" x2="110" y2="220" stroke="#8250df" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="110" y1="220" x2="480" y2="220" stroke="#8250df" stroke-width="1.2" marker-end="url(#arrowPurple)"/>
+      <line x1="260" y1="143" x2="260" y2="250" stroke="#8250df" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="260" y1="250" x2="480" y2="250" stroke="#8250df" stroke-width="1.2" marker-end="url(#arrowPurple)"/>
+      <line x1="110" y1="143" x2="110" y2="280" stroke="#8250df" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>
+      <line x1="110" y1="280" x2="480" y2="280" stroke="#8250df" stroke-width="1.2" marker-end="url(#arrowPurple)"/>
+      <line x1="260" y1="143" x2="260" y2="310" stroke="#8250df" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>
+      <line x1="260" y1="310" x2="480" y2="310" stroke="#8250df" stroke-width="1.2" marker-end="url(#arrowPurple)"/>
+
+      <!-- Key insight box -->
+      <rect x="50" y="340" width="720" height="32" rx="6" fill="#eef1f5" stroke="#0969da" stroke-width="1"/>
+      <text x="410" y="361" text-anchor="middle" fill="#0969da" font-size="10" font-weight="600">Key: Both groups read ALL messages independently. Within a group, each partition is consumed by exactly one member.</text>
+    </svg>
+    <div class="caption">Fig 3. Kafka consumer groups. Group A (2 consumers) and Group B (4 consumers) both read the full topic independently. Partitions are load-balanced within each group.</div>
+  </div>
+
+  <div class="callout">
+    <strong>Consumer side — reading is not taking:</strong> In Kafka, consumers do not remove messages from the partition.
+    A consumer polls the partition leader for records starting at its current offset, processes the returned batch, then commits a newer offset to say
+    "I've processed up to here." The log remains unchanged until retention deletes old segments, which is why another consumer group can read the same
+    messages independently or an existing group can rewind and replay. This differs from SQS/RabbitMQ, where ACKing a message removes it from the queue.
+  </div>
+
   <div class="callout warn">
     <strong>Senior SWE pitfall — <code>acks</code> configuration:</strong><br>
     <code>acks=0</code> — fire-and-forget (fastest, data loss possible).<br>
@@ -484,7 +560,7 @@
         <marker id="arrowOrangeRabbit" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#d45500"/></marker>
       </defs>
     </svg>
-    <div class="caption">Fig 3. Traditional queue: in-memory linked list. Messages are deleted on ACK. Multiple consumers = competing consumers (each msg to one consumer only).</div>
+    <div class="caption">Fig 4. Traditional queue: in-memory linked list. Messages are deleted on ACK. Multiple consumers = competing consumers (each msg to one consumer only).</div>
   </div>
 
   <h4>SQS Visibility Timeout — The Hidden Complexity</h4>
@@ -532,7 +608,7 @@
       <text x="400" y="255" text-anchor="middle" fill="#656d76" font-size="10">you either use separate topics or do it in your consumer logic. RabbitMQ handles this at the broker level.</text>
       <text x="400" y="272" text-anchor="middle" fill="#656d76" font-size="10">SQS has zero routing — you need SNS in front for fan-out (SNS → multiple SQS queues).</text>
     </svg>
-    <div class="caption">Fig 4. RabbitMQ's exchange model. This is its superpower — and why it's still relevant despite Kafka's dominance.</div>
+    <div class="caption">Fig 5. RabbitMQ's exchange model. This is its superpower — and why it's still relevant despite Kafka's dominance.</div>
   </div>
 </section>
 
@@ -644,7 +720,7 @@
       <text x="425" y="272" text-anchor="middle" fill="#656d76" font-size="10">SQS FIFO: MessageGroupId = user_id → same group processed in order (but limits throughput to 300 msg/s/group)</text>
       <text x="425" y="289" text-anchor="middle" fill="#656d76" font-size="10">Global ordering across ALL messages? → single partition / single group → bottleneck. Rarely needed in practice.</text>
     </svg>
-    <div class="caption">Fig 5. Ordering is per-partition, per-queue, or per-group — never global unless you deliberately bottleneck throughput.</div>
+    <div class="caption">Fig 6. Ordering is per-partition, per-queue, or per-group — never global unless you deliberately bottleneck throughput.</div>
   </div>
 </section>
 
@@ -690,13 +766,406 @@
   </div>
 </section>
 
+<!-- ═══════════════════════════════════════════════════════
+     7. KINESIS & OTHER TOOLS
+     ═══════════════════════════════════════════════════════ -->
+<section id="kinesis">
+  <h2>7. AWS Kinesis &amp; Other Popular Tools</h2>
+
+  <h3 style="color:var(--kinesis)">AWS Kinesis Data Streams</h3>
+  <div class="callout">
+    <strong>Think of Kinesis as "managed Kafka on AWS"</strong> — log-based, shard-partitioned, replayable.
+    But with a very different operational model and pricing.
+  </div>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 850 260" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif" style="max-width:850px;">
+      <text x="425" y="25" text-anchor="middle" fill="#3b5fc0" font-size="14" font-weight="700">AWS Kinesis Data Streams — Shard Model</text>
+
+      <!-- Producers -->
+      <rect x="30" y="60" width="100" height="35" rx="6" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="80" y="82" text-anchor="middle" fill="#1a7f37" font-size="10">Producers</text>
+
+      <!-- PutRecord arrow -->
+      <line x1="130" y1="78" x2="200" y2="78" stroke="#3b5fc0" stroke-width="2" marker-end="url(#arrowKinesis)"/>
+      <text x="165" y="70" text-anchor="middle" fill="#656d76" font-size="9">PutRecord</text>
+
+      <!-- Shards -->
+      <rect x="200" y="45" width="400" height="140" rx="10" fill="#f6f8fa" stroke="#3b5fc0" stroke-width="2"/>
+      <text x="400" y="68" text-anchor="middle" fill="#3b5fc0" font-size="12" font-weight="600">Kinesis Stream: "clicks"</text>
+
+      <rect x="220" y="80" width="360" height="25" rx="4" fill="#eef1f5" stroke="#3b5fc0" stroke-width="1"/>
+      <text x="400" y="97" text-anchor="middle" fill="#1f2328" font-size="10">Shard-0: 1 MB/s write, 2 MB/s read — partition key hash range [0, N/2)</text>
+
+      <rect x="220" y="115" width="360" height="25" rx="4" fill="#eef1f5" stroke="#3b5fc0" stroke-width="1"/>
+      <text x="400" y="132" text-anchor="middle" fill="#1f2328" font-size="10">Shard-1: 1 MB/s write, 2 MB/s read — partition key hash range [N/2, N)</text>
+
+      <text x="400" y="168" text-anchor="middle" fill="#656d76" font-size="10">Each shard = ordered, immutable sequence. 24h–365d retention.</text>
+
+      <!-- Consumers -->
+      <line x1="600" y1="95" x2="660" y2="80" stroke="#1a7f37" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+      <line x1="600" y1="128" x2="660" y2="145" stroke="#1a7f37" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+
+      <rect x="660" y="60" width="150" height="35" rx="6" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="735" y="82" text-anchor="middle" fill="#1a7f37" font-size="10">KCL App / Lambda</text>
+
+      <rect x="660" y="128" width="150" height="35" rx="6" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="735" y="150" text-anchor="middle" fill="#1a7f37" font-size="10">Firehose → S3/Redshift</text>
+
+      <!-- Key difference -->
+      <rect x="100" y="200" width="650" height="45" rx="8" fill="#eef1f5" stroke="#3b5fc0" stroke-width="1"/>
+      <text x="425" y="220" text-anchor="middle" fill="#3b5fc0" font-size="11" font-weight="600">Kinesis vs Kafka: Fixed shard capacity (1 MB/s in, 2 MB/s out). Must re-shard to scale.</text>
+      <text x="425" y="237" text-anchor="middle" fill="#656d76" font-size="10">Kafka partitions are logical; Kinesis shards are billed capacity units. Kinesis is simpler but less flexible.</text>
+
+      <defs>
+        <marker id="arrowKinesis" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3b5fc0"/></marker>
+      </defs>
+    </svg>
+    <div class="caption">Fig 7. Kinesis Data Streams. Each shard has fixed read/write throughput — scaling means adding/splitting shards.</div>
+  </div>
+
+  <h4>Kinesis vs Kafka — When to Choose Which</h4>
+  <div class="cards">
+    <div class="card">
+      <h3 style="color:var(--kinesis)">Choose Kinesis when...</h3>
+      <ul>
+        <li>You're all-in on AWS and want zero ops</li>
+        <li>You need tight Lambda integration (event source mapping)</li>
+        <li>Your throughput is moderate (&lt; hundreds of shards)</li>
+        <li>You want Firehose for automatic S3/Redshift delivery</li>
+        <li>You don't need Kafka's ecosystem (Connect, Streams, ksqlDB)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--kafka)">Choose Kafka (or MSK) when...</h3>
+      <ul>
+        <li>You need higher throughput per partition (no fixed 1 MB/s limit)</li>
+        <li>You need longer retention (Kinesis max 365d, Kafka can do infinite with tiered storage)</li>
+        <li>You want Kafka Streams / ksqlDB for stream processing</li>
+        <li>You need Kafka Connect for CDC and integrations</li>
+        <li>You want multi-cloud or on-prem flexibility</li>
+      </ul>
+    </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <h3>Other Popular Tools at a Glance</h3>
+  <div class="cards">
+    <div class="card">
+      <span class="badge badge-stream">Log-based</span>
+      <h3 style="color:var(--pulsar)">Apache Pulsar</h3>
+      <p>Kafka alternative with <strong>separated storage (BookKeeper) from serving (brokers)</strong>. Supports multi-tenancy, geo-replication, and both queue + log semantics natively.
+         Key differentiator: you can have millions of topics without partition overhead.</p>
+      <div class="pros-cons">
+        <div><div class="pro-h">+ Strengths</div><ul><li>Built-in multi-tenancy</li><li>Geo-replication</li><li>Unified queue + stream model</li><li>Better topic scalability</li></ul></div>
+        <div><div class="con-h">- Weaknesses</div><ul><li>Smaller ecosystem than Kafka</li><li>More complex architecture (ZK + BK + brokers)</li><li>Less mature tooling</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <span class="badge badge-broker">Message broker</span>
+      <h3 style="color:var(--nats)">NATS / NATS JetStream</h3>
+      <p><strong>Extremely lightweight, high-performance messaging.</strong> Core NATS is fire-and-forget pub/sub. JetStream adds persistence, replay, and exactly-once.
+         Written in Go, single binary, sub-millisecond latency.</p>
+      <div class="pros-cons">
+        <div><div class="pro-h">+ Strengths</div><ul><li>Ultra-low latency (&lt;1 ms)</li><li>Simple ops (single binary)</li><li>Built-in clustering &amp; super-cluster</li><li>Great for edge/IoT</li></ul></div>
+        <div><div class="con-h">- Weaknesses</div><ul><li>JetStream still maturing</li><li>Smaller community</li><li>No rich routing like RabbitMQ</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <span class="badge badge-broker">In-memory + persistence</span>
+      <h3 style="color:var(--redis)">Redis Streams</h3>
+      <p><strong>Hybrid:</strong> Append-only log with consumer groups, living in Redis. Great when you already have Redis and need lightweight streaming.
+         Consumer groups support ACK, pending lists, and claiming (for recovery).</p>
+      <div class="pros-cons">
+        <div><div class="pro-h">+ Strengths</div><ul><li>Already in your stack (Redis)</li><li>Consumer groups + replay</li><li>Very fast (in-memory)</li><li>Simple API (XADD, XREADGROUP)</li></ul></div>
+        <div><div class="con-h">- Weaknesses</div><ul><li>Limited by memory (no disk tiering)</li><li>No partitioning across nodes</li><li>Not designed for massive throughput</li><li>Durability depends on Redis persistence config</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <span class="badge badge-queue">Managed</span>
+      <h3 style="color:var(--green)">Google Cloud Pub/Sub</h3>
+      <p><strong>GCP's fully managed messaging service.</strong> Semantically between SQS and Kafka — push or pull, at-least-once, automatic scaling.
+         Subscriptions can replay from a snapshot/timestamp. Supports ordering keys.</p>
+      <div class="pros-cons">
+        <div><div class="pro-h">+ Strengths</div><ul><li>Fully managed, global</li><li>Push + pull delivery</li><li>Message replay (snapshots)</li><li>Ordering keys</li></ul></div>
+        <div><div class="con-h">- Weaknesses</div><ul><li>GCP lock-in</li><li>Higher latency than Kafka</li><li>Less ecosystem than Kafka</li><li>Max 10 MB message</li></ul></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <hr class="section-divider">
 
 <!-- ═══════════════════════════════════════════════════════
-     7. FULL COMPARISON MATRIX
+     8. USE CASES
+     ═══════════════════════════════════════════════════════ -->
+<section id="use-cases">
+  <h2>8. Use Cases: Log-Based vs Memory-Based Brokers</h2>
+
+  <div class="cards">
+    <div class="card">
+      <span class="badge badge-log">Log-based broker</span>
+      <h3 style="color:var(--kafka)">Best use cases for Kafka / Kinesis / Pulsar</h3>
+      <ul>
+        <li><strong>Event sourcing:</strong> Store immutable facts such as orders, payments, or inventory changes for later replay.</li>
+        <li><strong>Audit trails:</strong> Keep a durable, ordered history of security events, financial events, or user activity.</li>
+        <li><strong>Change Data Capture:</strong> Stream database changes with tools like Debezium and fan them out to search, cache, and analytics systems.</li>
+        <li><strong>Real-time analytics:</strong> Feed metrics, clicks, logs, and telemetry into stream processing jobs or data lakes.</li>
+        <li><strong>Multiple independent subscribers:</strong> Let fraud, notifications, BI, and ML consumers read the same events at their own pace.</li>
+        <li><strong>Backfills and reprocessing:</strong> Re-run consumers from older offsets after bug fixes, schema migrations, or new feature launches.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <span class="badge badge-queue">Memory-based broker</span>
+      <h3 style="color:var(--rabbit)">Best use cases for RabbitMQ / SQS / Redis Streams</h3>
+      <ul>
+        <li><strong>Background jobs:</strong> Queue work such as email sends, image resizing, report generation, and webhook delivery.</li>
+        <li><strong>Work distribution:</strong> Spread independent tasks across a pool of competing workers where each task should run once.</li>
+        <li><strong>Request/reply workflows:</strong> Implement RPC-style interactions with correlation IDs, reply queues, and timeouts.</li>
+        <li><strong>Content-based routing:</strong> Use RabbitMQ exchanges to route messages by topic, header, region, tenant, or priority.</li>
+        <li><strong>Retry and DLQ handling:</strong> Move failed work through retry queues, visibility timeouts, and dead letter queues.</li>
+        <li><strong>Short-lived operational buffers:</strong> Absorb brief traffic spikes between producers and consumers without needing long-term replay.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Rule of thumb:</strong> choose log-based brokers when the event history itself is valuable; choose memory-based queues when the message is mainly a command to do work once.
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     9. DECISION FRAMEWORK
+     ═══════════════════════════════════════════════════════ -->
+<section id="decision">
+  <h2>9. Decision Framework</h2>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 900 520" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif" style="max-width:900px;">
+      <text x="450" y="25" text-anchor="middle" fill="#0969da" font-size="15" font-weight="700">Which Message System Should You Use?</text>
+
+      <!-- Q1 -->
+      <rect x="250" y="45" width="400" height="38" rx="8" fill="#eef1f5" stroke="#0969da" stroke-width="2"/>
+      <text x="450" y="70" text-anchor="middle" fill="#0969da" font-size="12" font-weight="600">Need replay / event sourcing / multiple consumers?</text>
+
+      <!-- YES → log-based -->
+      <line x1="350" y1="83" x2="200" y2="120" stroke="#1a7f37" stroke-width="2" marker-end="url(#arrowGreen)"/>
+      <text x="260" y="100" fill="#1a7f37" font-size="11" font-weight="600">YES</text>
+
+      <rect x="70" y="120" width="260" height="38" rx="8" fill="#eef1f5" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="200" y="145" text-anchor="middle" fill="#1a7f37" font-size="12" font-weight="600">→ Log-based system</text>
+
+      <!-- Sub-question: managed? -->
+      <rect x="70" y="175" width="260" height="35" rx="6" fill="#f6f8fa" stroke="#0969da" stroke-width="1"/>
+      <text x="200" y="197" text-anchor="middle" fill="#0969da" font-size="11">Want fully managed on AWS?</text>
+
+      <line x1="130" y1="210" x2="100" y2="240" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="100" y="260" text-anchor="middle" fill="#3b5fc0" font-size="12" font-weight="700">Kinesis</text>
+      <text x="100" y="275" text-anchor="middle" fill="#656d76" font-size="9">or MSK (managed Kafka)</text>
+
+      <line x1="270" y1="210" x2="300" y2="240" stroke="#c0392b" stroke-width="1.5"/>
+      <text x="300" y="260" text-anchor="middle" fill="#c0392b" font-size="12" font-weight="700">Kafka</text>
+      <text x="300" y="275" text-anchor="middle" fill="#656d76" font-size="9">self-managed / Confluent</text>
+
+      <!-- Sub: max throughput / ecosystem? -->
+      <rect x="70" y="295" width="260" height="35" rx="6" fill="#f6f8fa" stroke="#0969da" stroke-width="1"/>
+      <text x="200" y="317" text-anchor="middle" fill="#0969da" font-size="11">Need stream processing / CDC / ksqlDB?</text>
+      <line x1="200" y1="275" x2="200" y2="295" stroke="#656d76" stroke-width="1" stroke-dasharray="4,3"/>
+
+      <line x1="200" y1="330" x2="200" y2="355" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="200" y="375" text-anchor="middle" fill="#c0392b" font-size="12" font-weight="700">Kafka (with ecosystem)</text>
+      <text x="200" y="390" text-anchor="middle" fill="#656d76" font-size="9">Connect + Streams + Schema Registry</text>
+
+      <!-- NO → traditional queue -->
+      <line x1="550" y1="83" x2="700" y2="120" stroke="#c0392b" stroke-width="2" marker-end="url(#arrowGray)"/>
+      <text x="640" y="100" fill="#c0392b" font-size="11" font-weight="600">NO</text>
+
+      <rect x="570" y="120" width="260" height="38" rx="8" fill="#eef1f5" stroke="#d68000" stroke-width="1.5"/>
+      <text x="700" y="145" text-anchor="middle" fill="#d68000" font-size="12" font-weight="600">→ Traditional queue / broker</text>
+
+      <!-- Sub: routing? -->
+      <rect x="570" y="175" width="260" height="35" rx="6" fill="#f6f8fa" stroke="#0969da" stroke-width="1"/>
+      <text x="700" y="197" text-anchor="middle" fill="#0969da" font-size="11">Need complex routing / RPC patterns?</text>
+
+      <line x1="640" y1="210" x2="610" y2="240" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="610" y="260" text-anchor="middle" fill="#d45500" font-size="12" font-weight="700">RabbitMQ</text>
+      <text x="610" y="275" text-anchor="middle" fill="#656d76" font-size="9">exchanges, priority, RPC</text>
+
+      <line x1="760" y1="210" x2="790" y2="240" stroke="#c0392b" stroke-width="1.5"/>
+
+      <!-- Sub: zero ops? -->
+      <rect x="680" y="240" width="180" height="35" rx="6" fill="#f6f8fa" stroke="#0969da" stroke-width="1"/>
+      <text x="770" y="262" text-anchor="middle" fill="#0969da" font-size="11">Want zero ops on AWS?</text>
+
+      <line x1="730" y1="275" x2="700" y2="305" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="700" y="325" text-anchor="middle" fill="#d68000" font-size="12" font-weight="700">SQS</text>
+      <text x="700" y="340" text-anchor="middle" fill="#656d76" font-size="9">simplest, cheapest</text>
+
+      <line x1="810" y1="275" x2="840" y2="305" stroke="#c0392b" stroke-width="1.5"/>
+      <text x="840" y="325" text-anchor="middle" fill="#1a7f37" font-size="12" font-weight="700">GCP Pub/Sub</text>
+      <text x="840" y="340" text-anchor="middle" fill="#656d76" font-size="9">or NATS / Redis Streams</text>
+
+      <!-- Bottom line -->
+      <rect x="200" y="430" width="500" height="70" rx="10" fill="#eef1f5" stroke="#8250df" stroke-width="1.5"/>
+      <text x="450" y="455" text-anchor="middle" fill="#8250df" font-size="13" font-weight="700">Hybrid approaches are common in production:</text>
+      <text x="450" y="475" text-anchor="middle" fill="#656d76" font-size="11">Kafka for event streams + SQS for background jobs + RabbitMQ for RPC</text>
+      <text x="450" y="492" text-anchor="middle" fill="#656d76" font-size="10">Pick the right tool for each use case. Don't force one system to do everything.</text>
+    </svg>
+    <div class="caption">Fig 8. Decision tree. In practice, many production systems use 2+ messaging systems for different use cases.</div>
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     10. PRODUCTION GOTCHAS
+     ═══════════════════════════════════════════════════════ -->
+<section id="production">
+  <h2>10. Production War Stories &amp; Gotchas</h2>
+
+  <div class="cards">
+    <div class="card">
+      <h3 style="color:var(--kafka)">Kafka: Partition Rebalancing Storm</h3>
+      <p>When a consumer joins/leaves a group, <strong>all partitions are reassigned</strong> (eager rebalancing). During rebalancing, no consumer in the group processes anything.
+         With 500 partitions and a consumer restart, you can get 30+ seconds of downtime.</p>
+      <p><strong>Fix:</strong> Use <code>CooperativeStickyAssignor</code> (Kafka 2.4+) for incremental rebalancing. Only revoked partitions stop processing.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--kafka)">Kafka: The "Poison Pill" Message</h3>
+      <p>A malformed message crashes your consumer. Consumer restarts, re-reads the same message from the last committed offset, crashes again. <strong>Infinite loop.</strong></p>
+      <p><strong>Fix:</strong> Wrap processing in try/catch. On repeated failure, produce to a DLQ topic, commit the offset, and move on. This is not automatic in Kafka — you build it.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--sqs)">SQS: Invisible but Not Gone</h3>
+      <p>Consumer receives message, starts processing, takes too long (exceeds <code>VisibilityTimeout</code>). Message becomes visible again. <strong>Another consumer picks it up.</strong> Now two consumers process the same message.</p>
+      <p><strong>Fix:</strong> Make consumers idempotent. Or extend visibility timeout mid-processing via <code>ChangeMessageVisibility</code>.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--rabbit)">RabbitMQ: Memory Alarm Death Spiral</h3>
+      <p>Queue depth grows, RabbitMQ starts paging messages to disk, performance tanks, consumers slow down, queue grows faster. Eventually the memory alarm fires and <strong>all publishers are blocked</strong>.</p>
+      <p><strong>Fix:</strong> Set queue length limits (<code>x-max-length</code>), use lazy queues for large backlogs, and monitor queue depth aggressively. Don't let RabbitMQ queues grow unbounded.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--kinesis)">Kinesis: The "Hot Shard" Problem</h3>
+      <p>If your partition key has low cardinality (e.g., "region" with 3 values), most data lands on 1 shard. That shard hits the 1 MB/s write limit while others idle.</p>
+      <p><strong>Fix:</strong> Use a high-cardinality partition key (user_id, request_id) or add random suffixes. Note: this is the exact same problem as Kafka's "hot partition."</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--purple)">All: The Idempotency Gap</h3>
+      <p>At-least-once delivery is the default everywhere. If your consumer <code>INSERT</code>s a row and crashes before ACKing, the message is redelivered and you get a duplicate row.</p>
+      <p><strong>Fix:</strong> Use <code>UPSERT</code> / <code>INSERT ... ON CONFLICT</code>, or store a processed message ID set, or design for idempotent operations (set operations, not increments).</p>
+    </div>
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     11. INTERVIEW CHEAT SHEET
+     ═══════════════════════════════════════════════════════ -->
+<section id="interview">
+  <h2>11. System Design Interview Cheat Sheet</h2>
+
+  <div class="callout success">
+    <strong>The winning pattern:</strong> Don't just name-drop a technology. State the <em>requirement</em>, map it to the <em>property</em> of the system, then pick.
+    <br><br>
+    Example: "We need multiple downstream services to process the same order events independently, and if we add a new service next quarter, it should be able to backfill from the last 7 days.
+    That requires message replay and independent consumer groups → <strong>Kafka</strong> (or Kinesis if we want managed on AWS)."
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Requirement</th>
+          <th>Best fit</th>
+          <th>Why</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Simple background job queue</td>
+          <td style="color:var(--sqs)">SQS</td>
+          <td>Zero ops, built-in DLQ, pay-per-use, auto-scales</td>
+        </tr>
+        <tr>
+          <td>Event sourcing / audit log</td>
+          <td style="color:var(--kafka)">Kafka</td>
+          <td>Immutable log, replayable, long retention</td>
+        </tr>
+        <tr>
+          <td>Multiple consumers for same events</td>
+          <td style="color:var(--kafka)">Kafka / Kinesis</td>
+          <td>Consumer groups read independently</td>
+        </tr>
+        <tr>
+          <td>Content-based routing</td>
+          <td style="color:var(--rabbit)">RabbitMQ</td>
+          <td>Exchange bindings, topic patterns, headers</td>
+        </tr>
+        <tr>
+          <td>Request/reply RPC</td>
+          <td style="color:var(--rabbit)">RabbitMQ</td>
+          <td>Built-in reply queues, correlation IDs</td>
+        </tr>
+        <tr>
+          <td>Real-time analytics pipeline</td>
+          <td style="color:var(--kafka)">Kafka</td>
+          <td>Kafka Streams / ksqlDB, high throughput, exactly-once</td>
+        </tr>
+        <tr>
+          <td>CDC (Change Data Capture)</td>
+          <td style="color:var(--kafka)">Kafka</td>
+          <td>Kafka Connect + Debezium, log-based capture</td>
+        </tr>
+        <tr>
+          <td>Serverless event processing on AWS</td>
+          <td style="color:var(--kinesis)">Kinesis / SQS</td>
+          <td>Native Lambda event source mapping</td>
+        </tr>
+        <tr>
+          <td>Lightweight streaming (already have Redis)</td>
+          <td style="color:var(--redis)">Redis Streams</td>
+          <td>No new infrastructure, consumer groups, fast</td>
+        </tr>
+        <tr>
+          <td>Ultra-low-latency pub/sub</td>
+          <td style="color:var(--nats)">NATS</td>
+          <td>Sub-ms latency, single binary, simple</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     12. REFERENCES
+     ═══════════════════════════════════════════════════════ -->
+<section id="references">
+  <h2>12. References</h2>
+
+  <ul style="color:var(--text2); padding-left:1.5rem;">
+    <li><a href="https://www.youtube.com/watch?v=_5mu7lZz5X4">Log-based and memory-based message brokers video</a></li>
+    <li><em>Designing Data-Intensive Applications</em>, Chapter 11: Stream Processing</li>
+  </ul>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     13. APPENDIX: FULL COMPARISON MATRIX
      ═══════════════════════════════════════════════════════ -->
 <section id="comparison">
-  <h2>7. Full Comparison Matrix</h2>
+  <h2>13. Appendix: Full Comparison Matrix</h2>
   <div class="table-wrap">
     <table>
       <thead>
@@ -817,401 +1286,6 @@
       </tbody>
     </table>
   </div>
-</section>
-
-<hr class="section-divider">
-
-<!-- ═══════════════════════════════════════════════════════
-     8. KINESIS & OTHER TOOLS
-     ═══════════════════════════════════════════════════════ -->
-<section id="kinesis">
-  <h2>8. AWS Kinesis &amp; Other Popular Tools</h2>
-
-  <h3 style="color:var(--kinesis)">AWS Kinesis Data Streams</h3>
-  <div class="callout">
-    <strong>Think of Kinesis as "managed Kafka on AWS"</strong> — log-based, shard-partitioned, replayable.
-    But with a very different operational model and pricing.
-  </div>
-
-  <div class="diagram-box">
-    <svg viewBox="0 0 850 260" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif" style="max-width:850px;">
-      <text x="425" y="25" text-anchor="middle" fill="#3b5fc0" font-size="14" font-weight="700">AWS Kinesis Data Streams — Shard Model</text>
-
-      <!-- Producers -->
-      <rect x="30" y="60" width="100" height="35" rx="6" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.5"/>
-      <text x="80" y="82" text-anchor="middle" fill="#1a7f37" font-size="10">Producers</text>
-
-      <!-- PutRecord arrow -->
-      <line x1="130" y1="78" x2="200" y2="78" stroke="#3b5fc0" stroke-width="2" marker-end="url(#arrowKinesis)"/>
-      <text x="165" y="70" text-anchor="middle" fill="#656d76" font-size="9">PutRecord</text>
-
-      <!-- Shards -->
-      <rect x="200" y="45" width="400" height="140" rx="10" fill="#f6f8fa" stroke="#3b5fc0" stroke-width="2"/>
-      <text x="400" y="68" text-anchor="middle" fill="#3b5fc0" font-size="12" font-weight="600">Kinesis Stream: "clicks"</text>
-
-      <rect x="220" y="80" width="360" height="25" rx="4" fill="#eef1f5" stroke="#3b5fc0" stroke-width="1"/>
-      <text x="400" y="97" text-anchor="middle" fill="#1f2328" font-size="10">Shard-0: 1 MB/s write, 2 MB/s read — partition key hash range [0, N/2)</text>
-
-      <rect x="220" y="115" width="360" height="25" rx="4" fill="#eef1f5" stroke="#3b5fc0" stroke-width="1"/>
-      <text x="400" y="132" text-anchor="middle" fill="#1f2328" font-size="10">Shard-1: 1 MB/s write, 2 MB/s read — partition key hash range [N/2, N)</text>
-
-      <text x="400" y="168" text-anchor="middle" fill="#656d76" font-size="10">Each shard = ordered, immutable sequence. 24h–365d retention.</text>
-
-      <!-- Consumers -->
-      <line x1="600" y1="95" x2="660" y2="80" stroke="#1a7f37" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
-      <line x1="600" y1="128" x2="660" y2="145" stroke="#1a7f37" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
-
-      <rect x="660" y="60" width="150" height="35" rx="6" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.5"/>
-      <text x="735" y="82" text-anchor="middle" fill="#1a7f37" font-size="10">KCL App / Lambda</text>
-
-      <rect x="660" y="128" width="150" height="35" rx="6" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.5"/>
-      <text x="735" y="150" text-anchor="middle" fill="#1a7f37" font-size="10">Firehose → S3/Redshift</text>
-
-      <!-- Key difference -->
-      <rect x="100" y="200" width="650" height="45" rx="8" fill="#eef1f5" stroke="#3b5fc0" stroke-width="1"/>
-      <text x="425" y="220" text-anchor="middle" fill="#3b5fc0" font-size="11" font-weight="600">Kinesis vs Kafka: Fixed shard capacity (1 MB/s in, 2 MB/s out). Must re-shard to scale.</text>
-      <text x="425" y="237" text-anchor="middle" fill="#656d76" font-size="10">Kafka partitions are logical; Kinesis shards are billed capacity units. Kinesis is simpler but less flexible.</text>
-
-      <defs>
-        <marker id="arrowKinesis" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3b5fc0"/></marker>
-      </defs>
-    </svg>
-    <div class="caption">Fig 6. Kinesis Data Streams. Each shard has fixed read/write throughput — scaling means adding/splitting shards.</div>
-  </div>
-
-  <h4>Kinesis vs Kafka — When to Choose Which</h4>
-  <div class="cards">
-    <div class="card">
-      <h3 style="color:var(--kinesis)">Choose Kinesis when...</h3>
-      <ul>
-        <li>You're all-in on AWS and want zero ops</li>
-        <li>You need tight Lambda integration (event source mapping)</li>
-        <li>Your throughput is moderate (&lt; hundreds of shards)</li>
-        <li>You want Firehose for automatic S3/Redshift delivery</li>
-        <li>You don't need Kafka's ecosystem (Connect, Streams, ksqlDB)</li>
-      </ul>
-    </div>
-    <div class="card">
-      <h3 style="color:var(--kafka)">Choose Kafka (or MSK) when...</h3>
-      <ul>
-        <li>You need higher throughput per partition (no fixed 1 MB/s limit)</li>
-        <li>You need longer retention (Kinesis max 365d, Kafka can do infinite with tiered storage)</li>
-        <li>You want Kafka Streams / ksqlDB for stream processing</li>
-        <li>You need Kafka Connect for CDC and integrations</li>
-        <li>You want multi-cloud or on-prem flexibility</li>
-      </ul>
-    </div>
-  </div>
-
-  <hr class="section-divider">
-
-  <h3>Other Popular Tools at a Glance</h3>
-  <div class="cards">
-    <div class="card">
-      <span class="badge badge-stream">Log-based</span>
-      <h3 style="color:var(--pulsar)">Apache Pulsar</h3>
-      <p>Kafka alternative with <strong>separated storage (BookKeeper) from serving (brokers)</strong>. Supports multi-tenancy, geo-replication, and both queue + log semantics natively.
-         Key differentiator: you can have millions of topics without partition overhead.</p>
-      <div class="pros-cons">
-        <div><div class="pro-h">+ Strengths</div><ul><li>Built-in multi-tenancy</li><li>Geo-replication</li><li>Unified queue + stream model</li><li>Better topic scalability</li></ul></div>
-        <div><div class="con-h">- Weaknesses</div><ul><li>Smaller ecosystem than Kafka</li><li>More complex architecture (ZK + BK + brokers)</li><li>Less mature tooling</li></ul></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <span class="badge badge-broker">Message broker</span>
-      <h3 style="color:var(--nats)">NATS / NATS JetStream</h3>
-      <p><strong>Extremely lightweight, high-performance messaging.</strong> Core NATS is fire-and-forget pub/sub. JetStream adds persistence, replay, and exactly-once.
-         Written in Go, single binary, sub-millisecond latency.</p>
-      <div class="pros-cons">
-        <div><div class="pro-h">+ Strengths</div><ul><li>Ultra-low latency (&lt;1 ms)</li><li>Simple ops (single binary)</li><li>Built-in clustering &amp; super-cluster</li><li>Great for edge/IoT</li></ul></div>
-        <div><div class="con-h">- Weaknesses</div><ul><li>JetStream still maturing</li><li>Smaller community</li><li>No rich routing like RabbitMQ</li></ul></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <span class="badge badge-broker">In-memory + persistence</span>
-      <h3 style="color:var(--redis)">Redis Streams</h3>
-      <p><strong>Hybrid:</strong> Append-only log with consumer groups, living in Redis. Great when you already have Redis and need lightweight streaming.
-         Consumer groups support ACK, pending lists, and claiming (for recovery).</p>
-      <div class="pros-cons">
-        <div><div class="pro-h">+ Strengths</div><ul><li>Already in your stack (Redis)</li><li>Consumer groups + replay</li><li>Very fast (in-memory)</li><li>Simple API (XADD, XREADGROUP)</li></ul></div>
-        <div><div class="con-h">- Weaknesses</div><ul><li>Limited by memory (no disk tiering)</li><li>No partitioning across nodes</li><li>Not designed for massive throughput</li><li>Durability depends on Redis persistence config</li></ul></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <span class="badge badge-queue">Managed</span>
-      <h3 style="color:var(--green)">Google Cloud Pub/Sub</h3>
-      <p><strong>GCP's fully managed messaging service.</strong> Semantically between SQS and Kafka — push or pull, at-least-once, automatic scaling.
-         Subscriptions can replay from a snapshot/timestamp. Supports ordering keys.</p>
-      <div class="pros-cons">
-        <div><div class="pro-h">+ Strengths</div><ul><li>Fully managed, global</li><li>Push + pull delivery</li><li>Message replay (snapshots)</li><li>Ordering keys</li></ul></div>
-        <div><div class="con-h">- Weaknesses</div><ul><li>GCP lock-in</li><li>Higher latency than Kafka</li><li>Less ecosystem than Kafka</li><li>Max 10 MB message</li></ul></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<hr class="section-divider">
-
-<!-- ═══════════════════════════════════════════════════════
-     9. USE CASES
-     ═══════════════════════════════════════════════════════ -->
-<section id="use-cases">
-  <h2>9. Use Cases: Log-Based vs Memory-Based Brokers</h2>
-
-  <div class="cards">
-    <div class="card">
-      <span class="badge badge-log">Log-based broker</span>
-      <h3 style="color:var(--kafka)">Best use cases for Kafka / Kinesis / Pulsar</h3>
-      <ul>
-        <li><strong>Event sourcing:</strong> Store immutable facts such as orders, payments, or inventory changes for later replay.</li>
-        <li><strong>Audit trails:</strong> Keep a durable, ordered history of security events, financial events, or user activity.</li>
-        <li><strong>Change Data Capture:</strong> Stream database changes with tools like Debezium and fan them out to search, cache, and analytics systems.</li>
-        <li><strong>Real-time analytics:</strong> Feed metrics, clicks, logs, and telemetry into stream processing jobs or data lakes.</li>
-        <li><strong>Multiple independent subscribers:</strong> Let fraud, notifications, BI, and ML consumers read the same events at their own pace.</li>
-        <li><strong>Backfills and reprocessing:</strong> Re-run consumers from older offsets after bug fixes, schema migrations, or new feature launches.</li>
-      </ul>
-    </div>
-
-    <div class="card">
-      <span class="badge badge-queue">Memory-based broker</span>
-      <h3 style="color:var(--rabbit)">Best use cases for RabbitMQ / SQS / Redis Streams</h3>
-      <ul>
-        <li><strong>Background jobs:</strong> Queue work such as email sends, image resizing, report generation, and webhook delivery.</li>
-        <li><strong>Work distribution:</strong> Spread independent tasks across a pool of competing workers where each task should run once.</li>
-        <li><strong>Request/reply workflows:</strong> Implement RPC-style interactions with correlation IDs, reply queues, and timeouts.</li>
-        <li><strong>Content-based routing:</strong> Use RabbitMQ exchanges to route messages by topic, header, region, tenant, or priority.</li>
-        <li><strong>Retry and DLQ handling:</strong> Move failed work through retry queues, visibility timeouts, and dead letter queues.</li>
-        <li><strong>Short-lived operational buffers:</strong> Absorb brief traffic spikes between producers and consumers without needing long-term replay.</li>
-      </ul>
-    </div>
-  </div>
-
-  <div class="callout">
-    <strong>Rule of thumb:</strong> choose log-based brokers when the event history itself is valuable; choose memory-based queues when the message is mainly a command to do work once.
-  </div>
-</section>
-
-<hr class="section-divider">
-
-<!-- ═══════════════════════════════════════════════════════
-     10. DECISION FRAMEWORK
-     ═══════════════════════════════════════════════════════ -->
-<section id="decision">
-  <h2>10. Decision Framework</h2>
-
-  <div class="diagram-box">
-    <svg viewBox="0 0 900 520" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif" style="max-width:900px;">
-      <text x="450" y="25" text-anchor="middle" fill="#0969da" font-size="15" font-weight="700">Which Message System Should You Use?</text>
-
-      <!-- Q1 -->
-      <rect x="250" y="45" width="400" height="38" rx="8" fill="#eef1f5" stroke="#0969da" stroke-width="2"/>
-      <text x="450" y="70" text-anchor="middle" fill="#0969da" font-size="12" font-weight="600">Need replay / event sourcing / multiple consumers?</text>
-
-      <!-- YES → log-based -->
-      <line x1="350" y1="83" x2="200" y2="120" stroke="#1a7f37" stroke-width="2" marker-end="url(#arrowGreen)"/>
-      <text x="260" y="100" fill="#1a7f37" font-size="11" font-weight="600">YES</text>
-
-      <rect x="70" y="120" width="260" height="38" rx="8" fill="#eef1f5" stroke="#1a7f37" stroke-width="1.5"/>
-      <text x="200" y="145" text-anchor="middle" fill="#1a7f37" font-size="12" font-weight="600">→ Log-based system</text>
-
-      <!-- Sub-question: managed? -->
-      <rect x="70" y="175" width="260" height="35" rx="6" fill="#f6f8fa" stroke="#0969da" stroke-width="1"/>
-      <text x="200" y="197" text-anchor="middle" fill="#0969da" font-size="11">Want fully managed on AWS?</text>
-
-      <line x1="130" y1="210" x2="100" y2="240" stroke="#1a7f37" stroke-width="1.5"/>
-      <text x="100" y="260" text-anchor="middle" fill="#3b5fc0" font-size="12" font-weight="700">Kinesis</text>
-      <text x="100" y="275" text-anchor="middle" fill="#656d76" font-size="9">or MSK (managed Kafka)</text>
-
-      <line x1="270" y1="210" x2="300" y2="240" stroke="#c0392b" stroke-width="1.5"/>
-      <text x="300" y="260" text-anchor="middle" fill="#c0392b" font-size="12" font-weight="700">Kafka</text>
-      <text x="300" y="275" text-anchor="middle" fill="#656d76" font-size="9">self-managed / Confluent</text>
-
-      <!-- Sub: max throughput / ecosystem? -->
-      <rect x="70" y="295" width="260" height="35" rx="6" fill="#f6f8fa" stroke="#0969da" stroke-width="1"/>
-      <text x="200" y="317" text-anchor="middle" fill="#0969da" font-size="11">Need stream processing / CDC / ksqlDB?</text>
-      <line x1="200" y1="275" x2="200" y2="295" stroke="#656d76" stroke-width="1" stroke-dasharray="4,3"/>
-
-      <line x1="200" y1="330" x2="200" y2="355" stroke="#1a7f37" stroke-width="1.5"/>
-      <text x="200" y="375" text-anchor="middle" fill="#c0392b" font-size="12" font-weight="700">Kafka (with ecosystem)</text>
-      <text x="200" y="390" text-anchor="middle" fill="#656d76" font-size="9">Connect + Streams + Schema Registry</text>
-
-      <!-- NO → traditional queue -->
-      <line x1="550" y1="83" x2="700" y2="120" stroke="#c0392b" stroke-width="2" marker-end="url(#arrowGray)"/>
-      <text x="640" y="100" fill="#c0392b" font-size="11" font-weight="600">NO</text>
-
-      <rect x="570" y="120" width="260" height="38" rx="8" fill="#eef1f5" stroke="#d68000" stroke-width="1.5"/>
-      <text x="700" y="145" text-anchor="middle" fill="#d68000" font-size="12" font-weight="600">→ Traditional queue / broker</text>
-
-      <!-- Sub: routing? -->
-      <rect x="570" y="175" width="260" height="35" rx="6" fill="#f6f8fa" stroke="#0969da" stroke-width="1"/>
-      <text x="700" y="197" text-anchor="middle" fill="#0969da" font-size="11">Need complex routing / RPC patterns?</text>
-
-      <line x1="640" y1="210" x2="610" y2="240" stroke="#1a7f37" stroke-width="1.5"/>
-      <text x="610" y="260" text-anchor="middle" fill="#d45500" font-size="12" font-weight="700">RabbitMQ</text>
-      <text x="610" y="275" text-anchor="middle" fill="#656d76" font-size="9">exchanges, priority, RPC</text>
-
-      <line x1="760" y1="210" x2="790" y2="240" stroke="#c0392b" stroke-width="1.5"/>
-
-      <!-- Sub: zero ops? -->
-      <rect x="680" y="240" width="180" height="35" rx="6" fill="#f6f8fa" stroke="#0969da" stroke-width="1"/>
-      <text x="770" y="262" text-anchor="middle" fill="#0969da" font-size="11">Want zero ops on AWS?</text>
-
-      <line x1="730" y1="275" x2="700" y2="305" stroke="#1a7f37" stroke-width="1.5"/>
-      <text x="700" y="325" text-anchor="middle" fill="#d68000" font-size="12" font-weight="700">SQS</text>
-      <text x="700" y="340" text-anchor="middle" fill="#656d76" font-size="9">simplest, cheapest</text>
-
-      <line x1="810" y1="275" x2="840" y2="305" stroke="#c0392b" stroke-width="1.5"/>
-      <text x="840" y="325" text-anchor="middle" fill="#1a7f37" font-size="12" font-weight="700">GCP Pub/Sub</text>
-      <text x="840" y="340" text-anchor="middle" fill="#656d76" font-size="9">or NATS / Redis Streams</text>
-
-      <!-- Bottom line -->
-      <rect x="200" y="430" width="500" height="70" rx="10" fill="#eef1f5" stroke="#8250df" stroke-width="1.5"/>
-      <text x="450" y="455" text-anchor="middle" fill="#8250df" font-size="13" font-weight="700">Hybrid approaches are common in production:</text>
-      <text x="450" y="475" text-anchor="middle" fill="#656d76" font-size="11">Kafka for event streams + SQS for background jobs + RabbitMQ for RPC</text>
-      <text x="450" y="492" text-anchor="middle" fill="#656d76" font-size="10">Pick the right tool for each use case. Don't force one system to do everything.</text>
-    </svg>
-    <div class="caption">Fig 7. Decision tree. In practice, many production systems use 2+ messaging systems for different use cases.</div>
-  </div>
-</section>
-
-<hr class="section-divider">
-
-<!-- ═══════════════════════════════════════════════════════
-     11. PRODUCTION GOTCHAS
-     ═══════════════════════════════════════════════════════ -->
-<section id="production">
-  <h2>11. Production War Stories &amp; Gotchas</h2>
-
-  <div class="cards">
-    <div class="card">
-      <h3 style="color:var(--kafka)">Kafka: Partition Rebalancing Storm</h3>
-      <p>When a consumer joins/leaves a group, <strong>all partitions are reassigned</strong> (eager rebalancing). During rebalancing, no consumer in the group processes anything.
-         With 500 partitions and a consumer restart, you can get 30+ seconds of downtime.</p>
-      <p><strong>Fix:</strong> Use <code>CooperativeStickyAssignor</code> (Kafka 2.4+) for incremental rebalancing. Only revoked partitions stop processing.</p>
-    </div>
-    <div class="card">
-      <h3 style="color:var(--kafka)">Kafka: The "Poison Pill" Message</h3>
-      <p>A malformed message crashes your consumer. Consumer restarts, re-reads the same message from the last committed offset, crashes again. <strong>Infinite loop.</strong></p>
-      <p><strong>Fix:</strong> Wrap processing in try/catch. On repeated failure, produce to a DLQ topic, commit the offset, and move on. This is not automatic in Kafka — you build it.</p>
-    </div>
-    <div class="card">
-      <h3 style="color:var(--sqs)">SQS: Invisible but Not Gone</h3>
-      <p>Consumer receives message, starts processing, takes too long (exceeds <code>VisibilityTimeout</code>). Message becomes visible again. <strong>Another consumer picks it up.</strong> Now two consumers process the same message.</p>
-      <p><strong>Fix:</strong> Make consumers idempotent. Or extend visibility timeout mid-processing via <code>ChangeMessageVisibility</code>.</p>
-    </div>
-    <div class="card">
-      <h3 style="color:var(--rabbit)">RabbitMQ: Memory Alarm Death Spiral</h3>
-      <p>Queue depth grows, RabbitMQ starts paging messages to disk, performance tanks, consumers slow down, queue grows faster. Eventually the memory alarm fires and <strong>all publishers are blocked</strong>.</p>
-      <p><strong>Fix:</strong> Set queue length limits (<code>x-max-length</code>), use lazy queues for large backlogs, and monitor queue depth aggressively. Don't let RabbitMQ queues grow unbounded.</p>
-    </div>
-    <div class="card">
-      <h3 style="color:var(--kinesis)">Kinesis: The "Hot Shard" Problem</h3>
-      <p>If your partition key has low cardinality (e.g., "region" with 3 values), most data lands on 1 shard. That shard hits the 1 MB/s write limit while others idle.</p>
-      <p><strong>Fix:</strong> Use a high-cardinality partition key (user_id, request_id) or add random suffixes. Note: this is the exact same problem as Kafka's "hot partition."</p>
-    </div>
-    <div class="card">
-      <h3 style="color:var(--purple)">All: The Idempotency Gap</h3>
-      <p>At-least-once delivery is the default everywhere. If your consumer <code>INSERT</code>s a row and crashes before ACKing, the message is redelivered and you get a duplicate row.</p>
-      <p><strong>Fix:</strong> Use <code>UPSERT</code> / <code>INSERT ... ON CONFLICT</code>, or store a processed message ID set, or design for idempotent operations (set operations, not increments).</p>
-    </div>
-  </div>
-</section>
-
-<hr class="section-divider">
-
-<!-- ═══════════════════════════════════════════════════════
-     12. INTERVIEW CHEAT SHEET
-     ═══════════════════════════════════════════════════════ -->
-<section id="interview">
-  <h2>12. System Design Interview Cheat Sheet</h2>
-
-  <div class="callout success">
-    <strong>The winning pattern:</strong> Don't just name-drop a technology. State the <em>requirement</em>, map it to the <em>property</em> of the system, then pick.
-    <br><br>
-    Example: "We need multiple downstream services to process the same order events independently, and if we add a new service next quarter, it should be able to backfill from the last 7 days.
-    That requires message replay and independent consumer groups → <strong>Kafka</strong> (or Kinesis if we want managed on AWS)."
-  </div>
-
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Requirement</th>
-          <th>Best fit</th>
-          <th>Why</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Simple background job queue</td>
-          <td style="color:var(--sqs)">SQS</td>
-          <td>Zero ops, built-in DLQ, pay-per-use, auto-scales</td>
-        </tr>
-        <tr>
-          <td>Event sourcing / audit log</td>
-          <td style="color:var(--kafka)">Kafka</td>
-          <td>Immutable log, replayable, long retention</td>
-        </tr>
-        <tr>
-          <td>Multiple consumers for same events</td>
-          <td style="color:var(--kafka)">Kafka / Kinesis</td>
-          <td>Consumer groups read independently</td>
-        </tr>
-        <tr>
-          <td>Content-based routing</td>
-          <td style="color:var(--rabbit)">RabbitMQ</td>
-          <td>Exchange bindings, topic patterns, headers</td>
-        </tr>
-        <tr>
-          <td>Request/reply RPC</td>
-          <td style="color:var(--rabbit)">RabbitMQ</td>
-          <td>Built-in reply queues, correlation IDs</td>
-        </tr>
-        <tr>
-          <td>Real-time analytics pipeline</td>
-          <td style="color:var(--kafka)">Kafka</td>
-          <td>Kafka Streams / ksqlDB, high throughput, exactly-once</td>
-        </tr>
-        <tr>
-          <td>CDC (Change Data Capture)</td>
-          <td style="color:var(--kafka)">Kafka</td>
-          <td>Kafka Connect + Debezium, log-based capture</td>
-        </tr>
-        <tr>
-          <td>Serverless event processing on AWS</td>
-          <td style="color:var(--kinesis)">Kinesis / SQS</td>
-          <td>Native Lambda event source mapping</td>
-        </tr>
-        <tr>
-          <td>Lightweight streaming (already have Redis)</td>
-          <td style="color:var(--redis)">Redis Streams</td>
-          <td>No new infrastructure, consumer groups, fast</td>
-        </tr>
-        <tr>
-          <td>Ultra-low-latency pub/sub</td>
-          <td style="color:var(--nats)">NATS</td>
-          <td>Sub-ms latency, single binary, simple</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<hr class="section-divider">
-
-<!-- ═══════════════════════════════════════════════════════
-     13. REFERENCES
-     ═══════════════════════════════════════════════════════ -->
-<section id="references">
-  <h2>13. References</h2>
-
-  <ul style="color:var(--text2); padding-left:1.5rem;">
-    <li><a href="https://www.youtube.com/watch?v=_5mu7lZz5X4">Log-based and memory-based message brokers video</a></li>
-    <li><em>Designing Data-Intensive Applications</em>, Chapter 11: Stream Processing</li>
-  </ul>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════
