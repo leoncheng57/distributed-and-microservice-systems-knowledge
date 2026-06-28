@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System Design Knowledge Study</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f6f8fa;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --muted: #656d76;
+      --blue: #0969da;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.6;
+    }
+
+    main {
+      width: min(960px, calc(100% - 2rem));
+      margin: 0 auto;
+      padding: 4rem 0;
+    }
+
+    header {
+      margin-bottom: 2rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1 {
+      margin: 0 0 0.5rem;
+      font-size: clamp(2rem, 5vw, 3rem);
+      line-height: 1.1;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    .cards {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .card {
+      display: block;
+      padding: 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .card:hover {
+      border-color: var(--blue);
+      box-shadow: 0 8px 24px rgba(9, 105, 218, 0.12);
+    }
+
+    .card h2 {
+      margin: 0 0 0.4rem;
+      color: var(--blue);
+      font-size: 1.25rem;
+    }
+
+    .card p {
+      font-size: 0.98rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>System Design Knowledge Study</h1>
+      <p>Public study notes and deep dives on system design concepts, patterns, and production trade-offs.</p>
+    </header>
+
+    <section class="cards" aria-label="Study topics">
+      <a class="card" href="./kafka-vs-sqs-rabbitmq.html">
+        <h2>Message Brokers Deep Dive</h2>
+        <p>Kafka vs SQS vs RabbitMQ, plus Kinesis, NATS, Pulsar, Redis Streams, delivery semantics, backpressure, and production gotchas.</p>
+      </a>
+    </section>
+  </main>
+</body>
+</html>
