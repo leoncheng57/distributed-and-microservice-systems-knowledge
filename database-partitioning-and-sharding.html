@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Database Partitioning &amp; Sharding Deep Dive</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f6f8fa;
+      --surface2: #eef1f5;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --text2: #424a53;
+      --muted: #656d76;
+      --blue: #0969da;
+      --green: #1a7f37;
+      --red: #c0392b;
+      --yellow: #9a6700;
+      --purple: #8250df;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.75;
+    }
+
+    .container { max-width: 1120px; margin: 0 auto; padding: 2.5rem 2rem; }
+
+    header {
+      text-align: center;
+      padding: 2.8rem 0 2.3rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 2.8rem;
+    }
+
+    h1 { font-size: 2.45rem; font-weight: 800; margin-bottom: 0.5rem; letter-spacing: -0.4px; }
+    h2 { font-size: 1.65rem; color: var(--blue); margin-bottom: 1rem; }
+    h3 { font-size: 1.12rem; margin-bottom: 0.6rem; }
+    p { color: var(--text2); margin-bottom: 1rem; }
+
+    section { margin-bottom: 3.2rem; }
+    ul { padding-left: 1.25rem; color: var(--text2); }
+    li { margin-bottom: 0.35rem; }
+
+    code {
+      font-family: "SF Mono", "Fira Code", Consolas, monospace;
+      background: var(--surface2);
+      padding: 0.1em 0.4em;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+
+    .toc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.2rem 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+    .toc ol { padding-left: 1.2rem; }
+    .toc a { color: var(--blue); text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+
+    .callout {
+      background: var(--surface2);
+      border-left: 4px solid var(--blue);
+      border-radius: 0 8px 8px 0;
+      padding: 1rem 1.2rem;
+      margin-bottom: 1rem;
+    }
+    .callout.warn { border-left-color: var(--yellow); }
+    .callout.success { border-left-color: var(--green); }
+    .callout.danger { border-left-color: var(--red); }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.2rem;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      padding: 1rem 1.1rem;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 1rem;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { text-align: left; padding: 0.75rem 0.85rem; border-bottom: 1px solid var(--border); }
+    th { background: var(--surface2); color: var(--blue); }
+    tr:last-child td { border-bottom: none; }
+    td:first-child { font-weight: 600; color: var(--text); white-space: nowrap; }
+
+    .pill {
+      display: inline-block;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      padding: 0.12rem 0.52rem;
+      border-radius: 4px;
+      margin-bottom: 0.5rem;
+      background: rgba(9, 105, 218, 0.14);
+      color: var(--blue);
+    }
+
+    .cheat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      margin-top: 3rem;
+      padding-top: 1.2rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    @media (max-width: 768px) {
+      .container { padding: 1.4rem 1rem; }
+      h1 { font-size: 1.9rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Database Partitioning &amp; Sharding Deep Dive</h1>
+      <p>Senior-level practical guide for partitioning and sharding databases in production systems.</p>
+    </header>
+
+    <nav class="toc" aria-label="Contents">
+      <h3>Contents</h3>
+      <ol>
+        <li><a href="#mental-models">Mental Models</a></li>
+        <li><a href="#partitioning">Partitioning Strategies</a></li>
+        <li><a href="#sharding">Sharding Strategies</a></li>
+        <li><a href="#operations">Operations: Rebalancing, Migrations, and Failure Modes</a></li>
+        <li><a href="#cheatsheet">System Design Interview Cheat Sheet</a></li>
+        <li><a href="#war-stories">War Stories from Production</a></li>
+      </ol>
+    </nav>
+
+    <section id="mental-models">
+      <h2>Mental Models</h2>
+      <div class="callout">
+        <strong>Partitioning</strong> usually means splitting data inside one logical database system. <strong>Sharding</strong> means splitting data across multiple database nodes that are queried as one logical dataset.
+      </div>
+      <div class="cards">
+        <article class="card">
+          <span class="pill">Why partition</span>
+          <ul>
+            <li>Reduce index and table working set.</li>
+            <li>Improve parallelism and prune scans.</li>
+            <li>Support lifecycle operations (archive/drop old partitions).</li>
+          </ul>
+        </article>
+        <article class="card">
+          <span class="pill">Why shard</span>
+          <ul>
+            <li>Break single-node CPU, IOPS, and storage limits.</li>
+            <li>Isolate noisy tenants/workloads.</li>
+            <li>Enable horizontal scaling and failure blast-radius control.</li>
+          </ul>
+        </article>
+        <article class="card">
+          <span class="pill">Golden rule</span>
+          <ul>
+            <li>Pick a distribution key aligned to your hottest read/write paths.</li>
+            <li>Minimize cross-partition and cross-shard joins/transactions.</li>
+            <li>Design for rebalancing from day one.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="partitioning">
+      <h2>Partitioning Strategies (mostly relational)</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Strategy</th>
+              <th>Best For</th>
+              <th>Main Risk</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Range</td>
+              <td>Time-series/event data, retention windows</td>
+              <td>Hot newest partition</td>
+            </tr>
+            <tr>
+              <td>Hash</td>
+              <td>Even distribution for high cardinality keys</td>
+              <td>Poor locality for range scans</td>
+            </tr>
+            <tr>
+              <td>List</td>
+              <td>Bounded categorical splits (region, tier)</td>
+              <td>Skew if category distribution shifts</td>
+            </tr>
+            <tr>
+              <td>Composite</td>
+              <td>Mixed filters (time + tenant)</td>
+              <td>Operational complexity</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>In PostgreSQL/MySQL workloads, partitioning helps first before sharding. It is often cheaper to tune schema, indexes, and partition pruning than to introduce distributed query complexity.</p>
+      <div class="callout warn">
+        <strong>Watch out:</strong> many teams partition tables but keep globally unique secondary indexes or cross-partition queries everywhere, which cancels expected gains.
+      </div>
+      <p><strong>NoSQL note:</strong> DynamoDB, Cassandra, and similar systems expose partition keys directly; your schema design is effectively sharding-by-design. Bad key choice causes hot partitions immediately.</p>
+    </section>
+
+    <section id="sharding">
+      <h2>Sharding Strategies</h2>
+      <div class="cards">
+        <article class="card">
+          <h3>Hash-based sharding</h3>
+          <ul>
+            <li>Route with <code>shard = hash(key) % N</code>.</li>
+            <li>Great write spread and simple routing.</li>
+            <li>Resharding is expensive without virtual shards.</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>Range-based sharding</h3>
+          <ul>
+            <li>Good for key locality and bounded scans.</li>
+            <li>Needs split/merge logic for hot ranges.</li>
+            <li>Requires active hotspot detection.</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>Directory / lookup sharding</h3>
+          <ul>
+            <li>Mapping service decides shard for each tenant/key.</li>
+            <li>Most flexible for online migration.</li>
+            <li>Adds control plane and consistency concerns.</li>
+          </ul>
+        </article>
+      </div>
+      <p><strong>Recommended production pattern:</strong> use many virtual shards (logical buckets) mapped to fewer physical nodes. Rebalancing then moves bucket ownership rather than rewriting hash functions globally.</p>
+      <div class="callout success">
+        <strong>Schema tip:</strong> include tenant or shard key in every major table and index prefix to keep reads/writes shard-local.
+      </div>
+    </section>
+
+    <section id="operations">
+      <h2>Operations: Rebalancing, Migrations, and Failure Modes</h2>
+      <ul>
+        <li><strong>Online migration pattern:</strong> dual-write + backfill + read-verify + cutover + decommission.</li>
+        <li><strong>Reshard trigger metrics:</strong> p99 latency by shard, disk growth slope, queue lag, compaction debt, and replica catch-up lag.</li>
+        <li><strong>Cross-shard transactions:</strong> avoid if possible; use sagas, idempotent writes, and compensating actions.</li>
+        <li><strong>Observability minimum:</strong> shard-level SLO dashboard, top keys by QPS, hot partition alarms, rebalance progress metrics.</li>
+      </ul>
+      <div class="callout danger">
+        <strong>Common failure mode:</strong> teams shard only data storage, but leave cache keys, job queues, and downstream services unsharded. The real bottleneck just moves.
+      </div>
+    </section>
+
+    <section id="cheatsheet">
+      <h2>System Design Interview Cheat Sheet</h2>
+      <div class="cheat-grid">
+        <article class="card">
+          <h3>1) Clarify first</h3>
+          <ul>
+            <li>Read/write ratio?</li>
+            <li>Access pattern by key/time/tenant?</li>
+            <li>Strong vs eventual consistency requirements?</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>2) Capacity math</h3>
+          <ul>
+            <li>Estimate QPS peak and growth.</li>
+            <li>Estimate per-row size and index overhead.</li>
+            <li>Compute hot-key risk and per-node headroom.</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>3) Key decisions</h3>
+          <ul>
+            <li>Partition key and shard key.</li>
+            <li>Routing layer and metadata store.</li>
+            <li>Rebalance strategy and cutover protocol.</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>4) Trade-offs to say out loud</h3>
+          <ul>
+            <li>Locality vs even distribution.</li>
+            <li>Operational simplicity vs flexibility.</li>
+            <li>Consistency guarantees vs write throughput.</li>
+          </ul>
+        </article>
+      </div>
+      <div class="callout">
+        <strong>Interview line that scores well:</strong> "I'll optimize for shard-local reads/writes first, then explicitly design rebalancing and hot-key mitigation because scale failures are usually operational, not theoretical."
+      </div>
+    </section>
+
+    <section id="war-stories">
+      <h2>War Stories (Anonymized)</h2>
+      <div class="cards">
+        <article class="card">
+          <h3>"Hash looked perfect - until one customer wasn't"</h3>
+          <p>A B2B SaaS team hashed by <code>tenant_id</code>. One enterprise tenant generated 35% of writes and saturated a single shard.</p>
+          <p><strong>Lesson:</strong> model "tenant size skew," not just tenant count. Add sub-sharding for whale tenants.</p>
+        </article>
+        <article class="card">
+          <h3>"Range shards melted every Monday morning"</h3>
+          <p>Time-range sharding pushed all new traffic to latest shard. Weekly batch jobs amplified hotspotting.</p>
+          <p><strong>Lesson:</strong> combine time with hash bucketing (e.g., <code>day + bucket</code>) for parallel ingest.</p>
+        </article>
+        <article class="card">
+          <h3>"Rebalance succeeded, latency still doubled"</h3>
+          <p>Data moved successfully, but cache and async workers still targeted old shard mapping for hours.</p>
+          <p><strong>Lesson:</strong> shard migration runbooks must include cache invalidation, worker rollout, and mapping TTL controls.</p>
+        </article>
+      </div>
+    </section>
+
+    <footer>
+      Back to <a href="./index.html">home</a>.
+    </footer>
+  </div>
+</body>
+</html>
