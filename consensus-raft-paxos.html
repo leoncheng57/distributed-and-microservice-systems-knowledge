@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Consensus Deep Dive — Raft, Paxos, Quorums &amp; Distributed Agreement</title>
+  <style>
+    /* ══════════════════════════════════════════════════════
+       DESIGN SYSTEM
+       ══════════════════════════════════════════════════════ */
+    :root {
+      --bg:         #ffffff;
+      --surface:    #f6f8fa;
+      --surface2:   #eef1f5;
+      --surface3:   #e8ecf0;
+      --border:     #d0d7de;
+      --text:       #1f2328;
+      --text2:      #424a53;
+      --muted:      #656d76;
+      --raft:       #c0392b;
+      --paxos:      #d68000;
+      --leader:     #1a7f37;
+      --follower:   #d45500;
+      --candidate:  #3b5fc0;
+      --zab:        #1a8aaf;
+      --byz:        #1470cc;
+      --blue:       #0969da;
+      --green:      #1a7f37;
+      --purple:     #8250df;
+      --yellow:     #9a6700;
+      --cyan:       #1b7c83;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.75;
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 2.5rem 2rem; }
+
+    /* ── Typography ── */
+    h1 { font-size: 2.6rem; font-weight: 800; margin-bottom: 0.4rem; letter-spacing: -0.5px; }
+    h2 { font-size: 1.7rem; font-weight: 700; margin-bottom: 1.2rem; color: var(--blue); }
+    h3 { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.8rem; }
+    h4 { font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text2); }
+    p  { color: var(--text2); margin-bottom: 1rem; }
+
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    code {
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+      background: var(--surface3);
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      font-size: 0.88em;
+    }
+
+    /* ── Layout ── */
+    header {
+      text-align: center;
+      padding: 3rem 0 2.5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 3rem;
+    }
+
+    header .subtitle { color: var(--muted); font-size: 1.1rem; max-width: 700px; margin: 0 auto; }
+
+    section { margin-bottom: 4rem; }
+
+    .section-divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 3rem 0;
+    }
+
+    /* ── Callout boxes ── */
+    .callout {
+      background: var(--surface2);
+      border-left: 4px solid var(--blue);
+      padding: 1.2rem 1.5rem;
+      border-radius: 0 8px 8px 0;
+      margin-bottom: 1.5rem;
+    }
+    .callout.warn { border-left-color: var(--yellow); }
+    .callout.danger { border-left-color: var(--raft); }
+    .callout.success { border-left-color: var(--green); }
+    .callout strong { color: var(--blue); }
+    .callout.warn strong { color: var(--yellow); }
+    .callout.danger strong { color: var(--raft); }
+    .callout.success strong { color: var(--green); }
+
+    /* ── Cards ── */
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+    }
+    .card h3 { margin-bottom: 0.5rem; }
+    .card p, .card ul { color: var(--muted); font-size: 0.95rem; }
+    .card ul { padding-left: 1.2rem; }
+    .card li { margin-bottom: 0.3rem; }
+
+    .badge {
+      display: inline-block; font-size: 0.7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.6px;
+      padding: 0.15rem 0.6rem; border-radius: 4px; margin-bottom: 0.6rem;
+    }
+    .badge-leader { background: rgba(26,127,55,0.15); color: var(--leader); }
+    .badge-quorum { background: rgba(214,128,0,0.15); color: var(--paxos); }
+    .badge-bft    { background: rgba(20,112,204,0.15); color: var(--byz); }
+    .badge-classic{ background: rgba(192,57,43,0.15); color: var(--raft); }
+
+    /* ── Tables ── */
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 1.5rem;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { padding: 0.8rem 1rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { background: var(--surface2); font-weight: 600; color: var(--blue); position: sticky; top: 0; }
+    td { background: var(--surface); color: var(--text2); }
+    tr:last-child td { border-bottom: none; }
+    td:first-child { font-weight: 600; color: var(--text); white-space: nowrap; }
+
+    /* ── SVG diagrams ── */
+    .diagram-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      overflow-x: auto;
+    }
+    .diagram-box svg { display: block; margin: 0 auto; }
+    .diagram-box .caption {
+      text-align: center; color: var(--muted); font-size: 0.85rem;
+      margin-top: 1rem; font-style: italic;
+    }
+
+    /* ── Pros/Cons ── */
+    .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.8rem; }
+    .pros-cons ul { padding-left: 1.2rem; color: var(--muted); font-size: 0.93rem; }
+    .pros-cons li { margin-bottom: 0.25rem; }
+    .pro-h { color: var(--green); font-weight: 600; margin-bottom: 0.4rem; }
+    .con-h { color: var(--raft); font-weight: 600; margin-bottom: 0.4rem; }
+
+    /* ── TOC ── */
+    .toc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem 2rem;
+      margin-bottom: 3rem;
+    }
+    .toc h3 { color: var(--text); margin-bottom: 0.6rem; }
+    .toc ol { padding-left: 1.4rem; }
+    .toc li { margin-bottom: 0.35rem; color: var(--muted); }
+    .toc a { color: var(--blue); }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 3rem; padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      text-align: center; color: var(--muted); font-size: 0.85rem;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .container { padding: 1.5rem 1rem; }
+      h1 { font-size: 1.8rem; }
+      .cards { grid-template-columns: 1fr; }
+      .pros-cons { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+<!-- ═══════════════════════════════════════════════════════
+     HEADER
+     ═══════════════════════════════════════════════════════ -->
+<header>
+  <h1>Consensus Deep Dive</h1>
+  <p class="subtitle">
+    A senior-engineer-level guide to distributed consensus &mdash;
+    <strong style="color:var(--raft)">Raft</strong>,
+    <strong style="color:var(--paxos)">Paxos</strong>,
+    <strong style="color:var(--zab)">ZAB</strong>,
+    quorums, leader election, log replication, and Byzantine fault tolerance &mdash;
+    covering the algorithms, safety/liveness guarantees, failure modes, and real production trade-offs.
+  </p>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════
+     TABLE OF CONTENTS
+     ═══════════════════════════════════════════════════════ -->
+<nav class="toc">
+  <h3>Contents</h3>
+  <ol>
+    <li><a href="#why">Why Consensus Exists — The Core Problem</a></li>
+    <li><a href="#fundamentals">Fundamental Mental Models</a></li>
+    <li><a href="#quorums">Quorums &amp; Why Majorities Matter</a></li>
+    <li><a href="#raft">Raft — Leader Election &amp; Log Replication</a></li>
+    <li><a href="#raft-safety">Raft Safety: Terms, Commit Rules &amp; Edge Cases</a></li>
+    <li><a href="#paxos">Paxos &amp; Multi-Paxos</a></li>
+    <li><a href="#other">ZAB, Viewstamped Replication &amp; Byzantine Fault Tolerance</a></li>
+    <li><a href="#flp-cap">FLP Impossibility &amp; CAP Connection</a></li>
+    <li><a href="#use-cases">Where Consensus Is Used in Real Systems</a></li>
+    <li><a href="#decision">Decision Framework</a></li>
+    <li><a href="#production">Production War Stories &amp; Gotchas</a></li>
+    <li><a href="#interview">System Design Interview Cheat Sheet</a></li>
+    <li><a href="#references">References</a></li>
+    <li><a href="#comparison">Appendix: Full Comparison Matrix</a></li>
+  </ol>
+</nav>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     1. WHY CONSENSUS EXISTS
+     ═══════════════════════════════════════════════════════ -->
+<section id="why">
+  <h2>1. Why Consensus Exists — The Core Problem</h2>
+
+  <div class="callout">
+    <strong>The one sentence that matters:</strong> Consensus is how a group of unreliable machines, communicating over an unreliable network, can <em>agree on a single value</em> (or an ordered sequence of values) even when some of them crash &mdash; without ever producing two conflicting answers.
+  </div>
+
+  <p>Every stateful distributed system eventually faces the same question: <strong>"who is in charge, and what is the current truth?"</strong> If you replicate data across 3 or 5 nodes for durability, you need them to agree on the order of writes. If you elect a leader, you need everyone to agree on <em>which</em> node is leader &mdash; and crucially, to never have two leaders accepting writes at the same time ("split brain").</p>
+
+  <p>Consensus algorithms solve this by guaranteeing two properties:</p>
+  <ul style="color:var(--text2); padding-left:1.5rem; margin-bottom:1.5rem;">
+    <li><strong>Safety ("nothing bad happens"):</strong> All non-faulty nodes agree on the same value, and that value was actually proposed by some node. Never two conflicting decisions.</li>
+    <li><strong>Liveness ("something good eventually happens"):</strong> As long as a majority of nodes are up and can communicate, the system will eventually make progress and decide a value.</li>
+  </ul>
+
+  <div class="callout warn">
+    <strong>Senior SWE framing:</strong> You almost never <em>implement</em> consensus yourself in an interview &mdash; you <em>delegate</em> it to a battle-tested system (etcd, ZooKeeper, Consul) and reason about its guarantees. The interview win is knowing <em>what</em> it gives you (linearizable writes, leader election, distributed locks), <em>what it costs</em> (latency, majority availability), and <em>how it fails</em> (network partitions, leader churn).
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     2. FUNDAMENTAL MENTAL MODELS
+     ═══════════════════════════════════════════════════════ -->
+<section id="fundamentals">
+  <h2>2. Fundamental Mental Models</h2>
+
+  <div class="cards">
+    <div class="card">
+      <span class="badge badge-leader">Leader-based consensus</span>
+      <h3 style="color:var(--raft)">Raft / Multi-Paxos / ZAB</h3>
+      <p>One node is elected <strong>leader</strong> and serializes all writes. The leader appends entries to a <strong>replicated log</strong> and waits for a majority to acknowledge before committing. This means:</p>
+      <ul>
+        <li><strong>Simple ordering:</strong> The leader assigns a total order to all operations</li>
+        <li><strong>Fast steady state:</strong> One network round-trip to a majority per write</li>
+        <li><strong>Election on failure:</strong> If the leader dies, a new one is elected (brief unavailability)</li>
+        <li><strong>This is what powers etcd, Consul, ZooKeeper, CockroachDB, TiKV</strong></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <span class="badge badge-quorum">Leaderless / quorum consensus</span>
+      <h3 style="color:var(--paxos)">Classic (Single-Decree) Paxos</h3>
+      <p>Any node can propose; agreement is reached through <strong>two-phase voting</strong> (prepare/promise, then accept/accepted) using majority quorums. This means:</p>
+      <ul>
+        <li><strong>No single point of failure</strong> for proposing, but more message rounds</li>
+        <li><strong>Dueling proposers</strong> can stall progress (livelock) without a leader</li>
+        <li><strong>Theoretical foundation</strong> — most real systems use a leader-based variant (Multi-Paxos)</li>
+        <li><strong>Famously hard to understand</strong> — which is exactly why Raft was created</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Replicated State Machine (RSM) — the unifying idea:</strong> If every node starts in the same state and applies the <em>same commands in the same order</em>, they all end in the same state. Consensus is "just" the mechanism to agree on that ordered log of commands. Raft, Paxos, and ZAB are all different ways to build the same replicated log.
+  </div>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif" style="max-width:860px;">
+      <text x="430" y="25" text-anchor="middle" fill="#0969da" font-size="15" font-weight="700">Replicated State Machine — Same Log → Same State</text>
+
+      <!-- Client -->
+      <rect x="30" y="120" width="90" height="40" rx="6" fill="#f6f8fa" stroke="#8250df" stroke-width="2"/>
+      <text x="75" y="145" text-anchor="middle" fill="#8250df" font-size="11" font-weight="600">Client</text>
+      <line x1="120" y1="140" x2="170" y2="140" stroke="#8250df" stroke-width="2" marker-end="url(#arrowPurple)"/>
+      <text x="145" y="132" text-anchor="middle" fill="#656d76" font-size="9">x=5</text>
+
+      <!-- Consensus module -->
+      <rect x="170" y="55" width="150" height="170" rx="10" fill="#eef1f5" stroke="#c0392b" stroke-width="2"/>
+      <text x="245" y="80" text-anchor="middle" fill="#c0392b" font-size="12" font-weight="700">Consensus</text>
+      <text x="245" y="96" text-anchor="middle" fill="#656d76" font-size="9">(agree on order)</text>
+      <rect x="190" y="110" width="110" height="22" rx="3" fill="#fff" stroke="#c0392b" stroke-width="1"/>
+      <text x="245" y="126" text-anchor="middle" fill="#1f2328" font-size="10">1. x=5</text>
+      <rect x="190" y="138" width="110" height="22" rx="3" fill="#fff" stroke="#c0392b" stroke-width="1"/>
+      <text x="245" y="154" text-anchor="middle" fill="#1f2328" font-size="10">2. y=3</text>
+      <rect x="190" y="166" width="110" height="22" rx="3" fill="#fff" stroke="#c0392b" stroke-width="1"/>
+      <text x="245" y="182" text-anchor="middle" fill="#1f2328" font-size="10">3. x=8</text>
+
+      <!-- Replicated logs to 3 state machines -->
+      <line x1="320" y1="100" x2="380" y2="80" stroke="#1a7f37" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+      <line x1="320" y1="140" x2="380" y2="140" stroke="#1a7f37" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+      <line x1="320" y1="180" x2="380" y2="200" stroke="#1a7f37" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+
+      <!-- 3 state machines -->
+      <rect x="380" y="55" width="200" height="50" rx="8" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="480" y="76" text-anchor="middle" fill="#1a7f37" font-size="11" font-weight="600">Node A — apply log</text>
+      <text x="480" y="92" text-anchor="middle" fill="#656d76" font-size="9">state: x=8, y=3</text>
+
+      <rect x="380" y="115" width="200" height="50" rx="8" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="480" y="136" text-anchor="middle" fill="#1a7f37" font-size="11" font-weight="600">Node B — apply log</text>
+      <text x="480" y="152" text-anchor="middle" fill="#656d76" font-size="9">state: x=8, y=3</text>
+
+      <rect x="380" y="175" width="200" height="50" rx="8" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="480" y="196" text-anchor="middle" fill="#1a7f37" font-size="11" font-weight="600">Node C — apply log</text>
+      <text x="480" y="212" text-anchor="middle" fill="#656d76" font-size="9">state: x=8, y=3</text>
+
+      <!-- result -->
+      <rect x="620" y="115" width="210" height="50" rx="8" fill="#eef1f5" stroke="#0969da" stroke-width="1.5"/>
+      <text x="725" y="136" text-anchor="middle" fill="#0969da" font-size="11" font-weight="600">Identical state</text>
+      <text x="725" y="152" text-anchor="middle" fill="#656d76" font-size="9">on every replica</text>
+      <line x1="580" y1="140" x2="620" y2="140" stroke="#0969da" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+
+      <defs>
+        <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#1a7f37"/></marker>
+        <marker id="arrowPurple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#8250df"/></marker>
+        <marker id="arrowBlue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#0969da"/></marker>
+      </defs>
+    </svg>
+    <div class="caption">Fig 1. The replicated state machine model. Consensus produces an agreed-upon ordered log; each node applies it deterministically to reach identical state.</div>
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     3. QUORUMS
+     ═══════════════════════════════════════════════════════ -->
+<section id="quorums">
+  <h2>3. Quorums &amp; Why Majorities Matter</h2>
+
+  <p>The beating heart of every consensus protocol is the <strong>majority quorum</strong>: a decision requires acknowledgment from more than half the nodes &mdash; <code>⌊N/2⌋ + 1</code>. The magic property: <strong>any two majorities always overlap in at least one node</strong>. That overlapping node "remembers" the previous decision, which is what prevents two conflicting decisions.</p>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 820 270" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif" style="max-width:820px;">
+      <text x="410" y="25" text-anchor="middle" fill="#0969da" font-size="14" font-weight="700">Why Majorities Overlap (N=5, quorum=3)</text>
+
+      <!-- 5 nodes -->
+      <circle cx="160" cy="110" r="26" fill="#eef1f5" stroke="#1a7f37" stroke-width="2"/><text x="160" y="115" text-anchor="middle" fill="#1f2328" font-size="12">N1</text>
+      <circle cx="250" cy="110" r="26" fill="#eef1f5" stroke="#1a7f37" stroke-width="2"/><text x="250" y="115" text-anchor="middle" fill="#1f2328" font-size="12">N2</text>
+      <circle cx="340" cy="110" r="26" fill="#fff7e6" stroke="#d68000" stroke-width="3"/><text x="340" y="115" text-anchor="middle" fill="#1f2328" font-size="12">N3</text>
+      <circle cx="430" cy="110" r="26" fill="#eef1f5" stroke="#3b5fc0" stroke-width="2"/><text x="430" y="115" text-anchor="middle" fill="#1f2328" font-size="12">N4</text>
+      <circle cx="520" cy="110" r="26" fill="#eef1f5" stroke="#3b5fc0" stroke-width="2"/><text x="520" y="115" text-anchor="middle" fill="#1f2328" font-size="12">N5</text>
+
+      <!-- Quorum A bracket -->
+      <path d="M 130 70 Q 250 45 370 70" fill="none" stroke="#1a7f37" stroke-width="2"/>
+      <text x="250" y="55" text-anchor="middle" fill="#1a7f37" font-size="11" font-weight="600">Quorum A = {N1,N2,N3}</text>
+
+      <!-- Quorum B bracket -->
+      <path d="M 310 150 Q 430 175 550 150" fill="none" stroke="#3b5fc0" stroke-width="2"/>
+      <text x="430" y="170" text-anchor="middle" fill="#3b5fc0" font-size="11" font-weight="600">Quorum B = {N3,N4,N5}</text>
+
+      <!-- overlap pointer -->
+      <line x1="340" y1="200" x2="340" y2="142" stroke="#d68000" stroke-width="1.5" stroke-dasharray="4,3"/>
+      <text x="340" y="218" text-anchor="middle" fill="#d68000" font-size="11" font-weight="700">N3 is in BOTH → overlap guaranteed</text>
+
+      <rect x="120" y="235" width="580" height="28" rx="6" fill="#eef1f5" stroke="#0969da" stroke-width="1"/>
+      <text x="410" y="254" text-anchor="middle" fill="#0969da" font-size="10" font-weight="600">Because any two majorities share ≥1 node, a value committed by one quorum is always seen by the next.</text>
+    </svg>
+    <div class="caption">Fig 2. Majority quorums always intersect — the foundation of consensus safety and split-brain prevention.</div>
+  </div>
+
+  <h4>Cluster Sizing — Why 3 and 5, Never 4</h4>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Cluster size (N)</th><th>Quorum needed</th><th>Failures tolerated</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>1</td><td>0</td><td>No fault tolerance — single node</td></tr>
+        <tr><td>3</td><td>2</td><td>1</td><td>Most common for control planes (etcd default)</td></tr>
+        <tr><td>4</td><td>3</td><td>1</td><td><strong>Wasteful</strong> — same tolerance as 3 but needs more acks</td></tr>
+        <tr><td>5</td><td>3</td><td>2</td><td>Standard for higher availability</td></tr>
+        <tr><td>7</td><td>4</td><td>3</td><td>Rare — more nodes = slower writes (more acks to gather)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout warn">
+    <strong>Senior SWE pitfall — always use odd numbers:</strong> A 4-node cluster tolerates the same single failure as a 3-node cluster but requires a larger quorum (3 vs 2) for every write, so it's <em>strictly worse</em>. Adding nodes increases fault tolerance but <em>increases</em> write latency because the leader must wait for more acknowledgments. Bigger is not faster.
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     4. RAFT
+     ═══════════════════════════════════════════════════════ -->
+<section id="raft">
+  <h2>4. Raft — Leader Election &amp; Log Replication</h2>
+
+  <p>Raft was designed in 2014 explicitly for <strong>understandability</strong>. It decomposes consensus into three sub-problems: <strong>leader election</strong>, <strong>log replication</strong>, and <strong>safety</strong>. Every node is always in one of three states.</p>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 820 320" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif" style="max-width:820px;">
+      <text x="410" y="25" text-anchor="middle" fill="#0969da" font-size="14" font-weight="700">Raft Node States &amp; Transitions</text>
+
+      <!-- Follower -->
+      <rect x="60" y="120" width="170" height="70" rx="10" fill="#f6f8fa" stroke="#d45500" stroke-width="2"/>
+      <text x="145" y="150" text-anchor="middle" fill="#d45500" font-size="14" font-weight="700">FOLLOWER</text>
+      <text x="145" y="170" text-anchor="middle" fill="#656d76" font-size="9">passive; responds to leader</text>
+
+      <!-- Candidate -->
+      <rect x="325" y="120" width="170" height="70" rx="10" fill="#f6f8fa" stroke="#3b5fc0" stroke-width="2"/>
+      <text x="410" y="150" text-anchor="middle" fill="#3b5fc0" font-size="14" font-weight="700">CANDIDATE</text>
+      <text x="410" y="170" text-anchor="middle" fill="#656d76" font-size="9">requests votes (RequestVote)</text>
+
+      <!-- Leader -->
+      <rect x="590" y="120" width="170" height="70" rx="10" fill="#f6f8fa" stroke="#1a7f37" stroke-width="2"/>
+      <text x="675" y="150" text-anchor="middle" fill="#1a7f37" font-size="14" font-weight="700">LEADER</text>
+      <text x="675" y="170" text-anchor="middle" fill="#656d76" font-size="9">handles all client writes</text>
+
+      <!-- Follower -> Candidate -->
+      <line x1="230" y1="145" x2="325" y2="145" stroke="#656d76" stroke-width="2" marker-end="url(#arrowGray)"/>
+      <text x="277" y="115" text-anchor="middle" fill="#656d76" font-size="9">election timeout</text>
+      <text x="277" y="128" text-anchor="middle" fill="#656d76" font-size="9">(no heartbeat)</text>
+
+      <!-- Candidate -> Leader -->
+      <line x1="495" y1="145" x2="590" y2="145" stroke="#1a7f37" stroke-width="2" marker-end="url(#arrowGreen)"/>
+      <text x="542" y="115" text-anchor="middle" fill="#1a7f37" font-size="9">wins majority</text>
+      <text x="542" y="128" text-anchor="middle" fill="#1a7f37" font-size="9">of votes</text>
+
+      <!-- Candidate -> Follower (loop back) -->
+      <path d="M 360 190 Q 290 250 175 190" fill="none" stroke="#d68000" stroke-width="1.5" marker-end="url(#arrowOrange)"/>
+      <text x="265" y="245" text-anchor="middle" fill="#d68000" font-size="9">discovers higher term / new leader</text>
+
+      <!-- Leader -> Follower -->
+      <path d="M 640 190 Q 400 290 175 195" fill="none" stroke="#c0392b" stroke-width="1.5" marker-end="url(#arrowRed)"/>
+      <text x="410" y="285" text-anchor="middle" fill="#c0392b" font-size="9">discovers server with higher term → steps down</text>
+
+      <!-- candidate self-loop split vote -->
+      <path d="M 380 120 Q 410 80 440 120" fill="none" stroke="#3b5fc0" stroke-width="1.5" marker-end="url(#arrowBlue2)"/>
+      <text x="410" y="78" text-anchor="middle" fill="#3b5fc0" font-size="9">split vote → new term, retry</text>
+
+      <defs>
+        <marker id="arrowGray" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#656d76"/></marker>
+        <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#1a7f37"/></marker>
+        <marker id="arrowOrange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#d68000"/></marker>
+        <marker id="arrowRed" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#c0392b"/></marker>
+        <marker id="arrowBlue2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3b5fc0"/></marker>
+      </defs>
+    </svg>
+    <div class="caption">Fig 3. Raft's three states. Followers become candidates on election timeout; candidates become leaders by winning a majority of votes.</div>
+  </div>
+
+  <h4>Terms — Raft's Logical Clock</h4>
+  <p>Raft divides time into <strong>terms</strong>, numbered consecutively. Each term begins with an election. A term has <em>at most one leader</em>. Every RPC carries the sender's term; if a node sees a higher term, it immediately reverts to follower. This is how Raft detects stale leaders and prevents split brain &mdash; an old leader that was partitioned away will have a lower term and be rejected the moment it reconnects.</p>
+
+  <h4>Leader Election Mechanics</h4>
+  <ul style="color:var(--text2); padding-left:1.5rem; margin-bottom:1.5rem;">
+    <li>Followers expect periodic <strong>heartbeats</strong> (empty AppendEntries) from the leader.</li>
+    <li>If a follower hears nothing for its <strong>randomized election timeout</strong> (typically 150–300 ms), it becomes a candidate, increments the term, votes for itself, and sends <code>RequestVote</code> RPCs.</li>
+    <li>A node grants its vote (one per term) if the candidate's log is <strong>at least as up-to-date</strong> as its own.</li>
+    <li>Winning a majority → leader. The <strong>randomized timeouts</strong> make simultaneous candidacies (split votes) rare, so elections usually resolve in one round.</li>
+  </ul>
+
+  <h4>Log Replication — The Steady State</h4>
+  <div class="diagram-box">
+    <svg viewBox="0 0 840 300" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif" style="max-width:840px;">
+      <text x="420" y="22" text-anchor="middle" fill="#0969da" font-size="14" font-weight="700">Raft Log Replication — One Write, One Round-Trip to Majority</text>
+
+      <!-- steps timeline -->
+      <text x="60" y="55" fill="#8250df" font-size="11" font-weight="600">①</text>
+      <text x="78" y="55" fill="#656d76" font-size="10">Client → Leader: write x=8</text>
+      <text x="60" y="80" fill="#8250df" font-size="11" font-weight="600">②</text>
+      <text x="78" y="80" fill="#656d76" font-size="10">Leader appends to its log (uncommitted) and sends AppendEntries to followers</text>
+      <text x="60" y="105" fill="#8250df" font-size="11" font-weight="600">③</text>
+      <text x="78" y="105" fill="#656d76" font-size="10">Once a MAJORITY acks, the entry is committed; leader applies it and replies to client</text>
+      <text x="60" y="130" fill="#8250df" font-size="11" font-weight="600">④</text>
+      <text x="78" y="130" fill="#656d76" font-size="10">Next heartbeat tells followers the new commit index → they apply it too</text>
+
+      <!-- Leader log -->
+      <text x="120" y="170" text-anchor="middle" fill="#1a7f37" font-size="11" font-weight="700">Leader</text>
+      <rect x="60" y="180" width="40" height="34" rx="3" fill="#eef1f5" stroke="#1a7f37" stroke-width="1.5"/><text x="80" y="202" text-anchor="middle" font-size="10">x=5</text>
+      <rect x="102" y="180" width="40" height="34" rx="3" fill="#eef1f5" stroke="#1a7f37" stroke-width="1.5"/><text x="122" y="202" text-anchor="middle" font-size="10">y=3</text>
+      <rect x="144" y="180" width="40" height="34" rx="3" fill="#d8f0dd" stroke="#1a7f37" stroke-width="2"/><text x="164" y="202" text-anchor="middle" font-size="10">x=8</text>
+
+      <!-- replication arrows -->
+      <line x1="184" y1="190" x2="320" y2="190" stroke="#1a7f37" stroke-width="1.5" marker-end="url(#arrowGreenR)"/>
+      <line x1="184" y1="205" x2="320" y2="255" stroke="#1a7f37" stroke-width="1.5" marker-end="url(#arrowGreenR)"/>
+      <text x="250" y="180" text-anchor="middle" fill="#656d76" font-size="9">AppendEntries</text>
+
+      <!-- Follower 1 -->
+      <text x="380" y="170" text-anchor="middle" fill="#d45500" font-size="11" font-weight="700">Follower 1</text>
+      <rect x="320" y="180" width="40" height="34" rx="3" fill="#eef1f5" stroke="#d45500" stroke-width="1"/><text x="340" y="202" text-anchor="middle" font-size="10">x=5</text>
+      <rect x="362" y="180" width="40" height="34" rx="3" fill="#eef1f5" stroke="#d45500" stroke-width="1"/><text x="382" y="202" text-anchor="middle" font-size="10">y=3</text>
+      <rect x="404" y="180" width="40" height="34" rx="3" fill="#d8f0dd" stroke="#1a7f37" stroke-width="2"/><text x="424" y="202" text-anchor="middle" font-size="10">x=8</text>
+      <text x="470" y="202" fill="#1a7f37" font-size="14" font-weight="700">✓ ack</text>
+
+      <!-- Follower 2 -->
+      <text x="380" y="245" text-anchor="middle" fill="#d45500" font-size="11" font-weight="700">Follower 2</text>
+      <rect x="320" y="252" width="40" height="34" rx="3" fill="#eef1f5" stroke="#d45500" stroke-width="1"/><text x="340" y="274" text-anchor="middle" font-size="10">x=5</text>
+      <rect x="362" y="252" width="40" height="34" rx="3" fill="#eef1f5" stroke="#d45500" stroke-width="1"/><text x="382" y="274" text-anchor="middle" font-size="10">y=3</text>
+      <rect x="404" y="252" width="40" height="34" rx="3" fill="#d8f0dd" stroke="#1a7f37" stroke-width="2"/><text x="424" y="274" text-anchor="middle" font-size="10">x=8</text>
+      <text x="470" y="274" fill="#1a7f37" font-size="14" font-weight="700">✓ ack</text>
+
+      <!-- commit box -->
+      <rect x="560" y="195" width="250" height="70" rx="8" fill="#eef1f5" stroke="#0969da" stroke-width="1.5"/>
+      <text x="685" y="220" text-anchor="middle" fill="#0969da" font-size="11" font-weight="700">Majority (2 of 3) acked</text>
+      <text x="685" y="240" text-anchor="middle" fill="#656d76" font-size="10">→ x=8 is COMMITTED</text>
+      <text x="685" y="256" text-anchor="middle" fill="#656d76" font-size="10">leader replies success to client</text>
+
+      <defs>
+        <marker id="arrowGreenR" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#1a7f37"/></marker>
+      </defs>
+    </svg>
+    <div class="caption">Fig 4. Raft log replication. An entry is committed once a majority of nodes have persisted it; only then is it applied and acknowledged to the client.</div>
+  </div>
+
+  <div class="callout">
+    <strong>Reads are subtle too:</strong> A naive leader could serve a stale read if it was just deposed by a partition it hasn't noticed. Safe linearizable reads require the leader to confirm it's still leader &mdash; via a <strong>ReadIndex</strong> (confirm commit + heartbeat a majority) or <strong>leader leases</strong> (time-bounded leadership). Many systems offer a faster "stale read from follower" mode when you don't need linearizability.
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     5. RAFT SAFETY
+     ═══════════════════════════════════════════════════════ -->
+<section id="raft-safety">
+  <h2>5. Raft Safety: Terms, Commit Rules &amp; Edge Cases</h2>
+
+  <div class="cards">
+    <div class="card">
+      <h3 style="color:var(--raft)">Election Restriction</h3>
+      <p>A candidate can only win if its log is <strong>at least as up-to-date</strong> as a majority. Up-to-date is defined by (last log term, last log index). This guarantees a new leader already contains <strong>all committed entries</strong> — committed data is never lost in an election.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--raft)">Leader Append-Only</h3>
+      <p>A leader <strong>never overwrites or deletes</strong> entries in its own log; it only appends. Conflicting follower entries are forced to match the leader's log (followers truncate and copy), never the reverse.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--raft)">Commit-from-Current-Term Rule</h3>
+      <p>A leader <strong>cannot</strong> commit an entry from a <em>previous</em> term just because it's replicated on a majority. It must commit a current-term entry (which carries the older ones with it). This closes a famous subtle bug where an old entry could be overwritten after appearing committed.</p>
+    </div>
+  </div>
+
+  <div class="callout danger">
+    <strong>The classic interview trap — "doesn't a majority ack mean committed?":</strong> Not always. If a new leader sees an old-term entry replicated on a majority, it still can't declare it committed, because a future leader without that entry could still win an election and overwrite it. Raft only considers an entry committed once an entry <em>from the leader's current term</em> is committed. Knowing this nuance signals deep understanding.
+  </div>
+
+  <h4>Log Matching Property</h4>
+  <p>Raft maintains a powerful invariant: <strong>if two logs contain an entry with the same index and term, then the logs are identical in all preceding entries.</strong> AppendEntries includes the index/term of the entry immediately preceding the new ones; a follower rejects the request if it doesn't match, and the leader walks backward until they reconcile. This consistency check is what keeps all logs convergent.</p>
+
+  <h4>Cluster Membership Changes</h4>
+  <p>You can't just swap the config on all nodes at once &mdash; during the transition you could momentarily form two disjoint majorities (split brain). Raft solves this with <strong>joint consensus</strong> (decisions require majorities in <em>both</em> old and new configs during the overlap) or, more commonly in practice, <strong>single-server changes</strong> (add/remove one node at a time so quorums always overlap).</p>
+
+  <h4>Log Compaction / Snapshots</h4>
+  <p>The log can't grow forever. Nodes periodically take a <strong>snapshot</strong> of the state machine and discard log entries up to that point. A leader sends an <code>InstallSnapshot</code> RPC to a follower that has fallen so far behind that the needed entries were already compacted away.</p>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     6. PAXOS
+     ═══════════════════════════════════════════════════════ -->
+<section id="paxos">
+  <h2>6. Paxos &amp; Multi-Paxos</h2>
+
+  <p>Paxos (Lamport, 1998) is the original proven-correct consensus algorithm. <strong>Single-decree Paxos</strong> agrees on <em>one</em> value through three roles &mdash; <strong>proposers</strong>, <strong>acceptors</strong>, and <strong>learners</strong> &mdash; using two phases.</p>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 840 290" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif" style="max-width:840px;">
+      <text x="420" y="22" text-anchor="middle" fill="#0969da" font-size="14" font-weight="700">Single-Decree Paxos — Two Phases</text>
+
+      <!-- Phase 1 box -->
+      <rect x="40" y="45" width="370" height="200" rx="10" fill="#f6f8fa" stroke="#d68000" stroke-width="1.5"/>
+      <text x="225" y="68" text-anchor="middle" fill="#d68000" font-size="12" font-weight="700">Phase 1 — Prepare / Promise</text>
+      <text x="225" y="90" text-anchor="middle" fill="#656d76" font-size="10">Proposer picks proposal number n</text>
+      <text x="60" y="115" fill="#656d76" font-size="10">→ Prepare(n) to a majority of acceptors</text>
+      <text x="60" y="138" fill="#656d76" font-size="10">← Promise: "I won't accept anything &lt; n"</text>
+      <text x="60" y="161" fill="#656d76" font-size="10">   and returns any value already accepted</text>
+      <rect x="60" y="178" width="330" height="52" rx="6" fill="#eef1f5" stroke="#d68000" stroke-width="1"/>
+      <text x="225" y="198" text-anchor="middle" fill="#d68000" font-size="10" font-weight="600">Key rule: if an acceptor already accepted a value,</text>
+      <text x="225" y="215" text-anchor="middle" fill="#656d76" font-size="10">the proposer MUST re-propose that value (not its own)</text>
+
+      <!-- Phase 2 box -->
+      <rect x="430" y="45" width="370" height="200" rx="10" fill="#f6f8fa" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="615" y="68" text-anchor="middle" fill="#1a7f37" font-size="12" font-weight="700">Phase 2 — Accept / Accepted</text>
+      <text x="615" y="90" text-anchor="middle" fill="#656d76" font-size="10">Proposer sends Accept(n, value)</text>
+      <text x="450" y="115" fill="#656d76" font-size="10">→ Accept(n, v) to the same majority</text>
+      <text x="450" y="138" fill="#656d76" font-size="10">← Accepted, unless a higher n was promised</text>
+      <text x="450" y="161" fill="#656d76" font-size="10">Once a majority accepts → value is CHOSEN</text>
+      <rect x="450" y="178" width="330" height="52" rx="6" fill="#eef1f5" stroke="#1a7f37" stroke-width="1"/>
+      <text x="615" y="198" text-anchor="middle" fill="#1a7f37" font-size="10" font-weight="600">Majority overlap guarantees: once chosen,</text>
+      <text x="615" y="215" text-anchor="middle" fill="#656d76" font-size="10">every future proposal re-discovers &amp; re-proposes it</text>
+
+      <line x1="410" y1="145" x2="430" y2="145" stroke="#656d76" stroke-width="2" marker-end="url(#arrowGrayP)"/>
+      <defs>
+        <marker id="arrowGrayP" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#656d76"/></marker>
+      </defs>
+    </svg>
+    <div class="caption">Fig 5. Single-decree Paxos. The "re-propose an already-accepted value" rule is what guarantees safety across competing proposers.</div>
+  </div>
+
+  <h4>Multi-Paxos — Making It Practical</h4>
+  <p>Running full two-phase Paxos for every single value is expensive. <strong>Multi-Paxos</strong> elects a <em>stable leader</em> that skips Phase 1 for subsequent values (it already holds the promise), reducing steady-state cost to a single round-trip &mdash; effectively the same as Raft. In fact, <strong>Raft can be seen as a more prescriptive, understandable Multi-Paxos.</strong></p>
+
+  <div class="pros-cons">
+    <div><div class="pro-h">Paxos strengths</div><ul><li>Formally proven, decades of theory</li><li>Maximally flexible / general</li><li>Powers Google Chubby, Spanner</li></ul></div>
+    <div><div class="con-h">Paxos weaknesses</div><ul><li>Notoriously hard to understand &amp; implement correctly</li><li>The paper leaves many practical gaps (the "Multi-Paxos" details)</li><li>Dueling proposers can livelock without a leader</li></ul></div>
+  </div>
+
+  <div class="callout">
+    <strong>Raft vs Paxos — the honest take:</strong> They provide the same guarantees and the same steady-state performance. Paxos came first and is the theoretical bedrock; Raft reorganized the same ideas around a strong leader and an understandable spec, which is why almost every <em>new</em> system since 2014 (etcd, Consul, CockroachDB, TiKV, Kafka KRaft) chose Raft. If asked "which would you use," the answer is almost always "a mature Raft implementation."
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     7. OTHER ALGORITHMS
+     ═══════════════════════════════════════════════════════ -->
+<section id="other">
+  <h2>7. ZAB, Viewstamped Replication &amp; Byzantine Fault Tolerance</h2>
+
+  <div class="cards">
+    <div class="card">
+      <span class="badge badge-leader">Leader-based</span>
+      <h3 style="color:var(--zab)">ZAB (ZooKeeper Atomic Broadcast)</h3>
+      <p>The protocol behind <strong>Apache ZooKeeper</strong>. Like Raft: a single leader, totally-ordered broadcast of state changes, majority quorums. Optimized for high read throughput and a primary-backup model with epoch numbers (analogous to Raft terms).</p>
+      <div class="pros-cons">
+        <div><div class="pro-h">+ Strengths</div><ul><li>Battle-tested (Hadoop, Kafka pre-KRaft)</li><li>Fast recovery</li><li>Strong ordering guarantees</li></ul></div>
+        <div><div class="con-h">- Weaknesses</div><ul><li>Tied to ZooKeeper</li><li>ZK ops can be heavy</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <span class="badge badge-classic">Leader-based</span>
+      <h3 style="color:var(--paxos)">Viewstamped Replication (VR)</h3>
+      <p>Predates Paxos's popularity; rediscovered as essentially equivalent. Uses <strong>views</strong> (like terms/epochs) and a primary. Historically important &mdash; shows leader-based consensus was independently invented multiple times.</p>
+      <div class="pros-cons">
+        <div><div class="pro-h">+ Strengths</div><ul><li>Clean primary/backup model</li><li>Influenced modern designs</li></ul></div>
+        <div><div class="con-h">- Weaknesses</div><ul><li>Less industry adoption by name</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <span class="badge badge-bft">Byzantine fault tolerant</span>
+      <h3 style="color:var(--byz)">PBFT / BFT-family</h3>
+      <p>Raft and Paxos tolerate <strong>crash faults</strong> (nodes stop) but assume non-faulty nodes are <em>honest</em>. <strong>Byzantine</strong> protocols tolerate nodes that lie, send conflicting messages, or are compromised. Needs <code>3f+1</code> nodes to tolerate <code>f</code> malicious ones.</p>
+      <div class="pros-cons">
+        <div><div class="pro-h">+ Strengths</div><ul><li>Tolerates malicious/arbitrary faults</li><li>Foundation of blockchains</li></ul></div>
+        <div><div class="con-h">- Weaknesses</div><ul><li>More nodes &amp; messages (O(n²))</li><li>Overkill inside a trusted datacenter</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <strong>Crash-fault vs Byzantine — know the distinction:</strong> Inside your own datacenter, nodes are trusted; you only worry about crashes and network issues → use <strong>Raft/Paxos</strong> (tolerate <code>f</code> failures with <code>2f+1</code> nodes). Across untrusted parties (cryptocurrencies, consortium ledgers), nodes may be adversarial → you need <strong>BFT</strong> (tolerate <code>f</code> with <code>3f+1</code> nodes). Don't bring BFT to a datacenter problem.
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     8. FLP & CAP
+     ═══════════════════════════════════════════════════════ -->
+<section id="flp-cap">
+  <h2>8. FLP Impossibility &amp; CAP Connection</h2>
+
+  <div class="cards">
+    <div class="card">
+      <h3 style="color:var(--raft)">FLP Impossibility (1985)</h3>
+      <p>In a fully <strong>asynchronous</strong> network (no bound on message delay) with even <em>one</em> crash-faulty process, <strong>no deterministic consensus algorithm can guarantee it always terminates.</strong></p>
+      <p>So how do Raft/Paxos work? They <strong>sacrifice guaranteed liveness</strong>, not safety. They use <strong>timeouts</strong> (a partial-synchrony assumption) to make progress in practice. Under pathological timing they could theoretically loop forever (e.g., endless split votes), but randomization makes this vanishingly unlikely.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--raft)">CAP Theorem Connection</h3>
+      <p>Consensus systems are <strong>CP</strong>: under a network <strong>P</strong>artition, they choose <strong>C</strong>onsistency over <strong>A</strong>vailability. The minority side of a partition <strong>cannot form a quorum</strong>, so it stops accepting writes (and optionally reads) rather than risk diverging.</p>
+      <p>This is why a 3-node etcd cluster split 2–1 keeps serving on the majority side and rejects writes on the lone node. <strong>Availability is sacrificed to preserve a single source of truth.</strong></p>
+    </div>
+  </div>
+
+  <div class="callout danger">
+    <strong>The senior-engineer take:</strong> "Safety is never violated; liveness is best-effort." A consensus system will <em>never</em> give you two conflicting committed values, but it <em>can</em> become temporarily unavailable (no leader, no quorum). When you choose Raft/etcd, you are explicitly choosing "rather be down than wrong." For data where availability matters more than strict consistency (shopping carts, social feeds), you'd reach for an AP, eventually-consistent store instead (Dynamo-style).
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     9. USE CASES
+     ═══════════════════════════════════════════════════════ -->
+<section id="use-cases">
+  <h2>9. Where Consensus Is Used in Real Systems</h2>
+
+  <div class="cards">
+    <div class="card">
+      <span class="badge badge-leader">Coordination plane</span>
+      <h3 style="color:var(--green)">Configuration, locks &amp; leader election</h3>
+      <ul>
+        <li><strong>etcd</strong> (Raft) — the brain of Kubernetes; stores all cluster state</li>
+        <li><strong>ZooKeeper</strong> (ZAB) — coordination for Hadoop, HBase, legacy Kafka</li>
+        <li><strong>Consul</strong> (Raft) — service discovery, config, distributed locks</li>
+        <li><strong>Distributed locks &amp; leader election</strong> for your own services</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="badge badge-classic">Data plane</span>
+      <h3 style="color:var(--raft)">Replicated databases &amp; logs</h3>
+      <ul>
+        <li><strong>CockroachDB / TiKV / YugabyteDB</strong> — Raft per data range/shard</li>
+        <li><strong>Google Spanner</strong> — Paxos groups per shard (with TrueTime)</li>
+        <li><strong>Kafka KRaft</strong> — Raft replaces ZooKeeper for metadata</li>
+        <li><strong>Replicated write-ahead logs</strong> for HA databases</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Rule of thumb:</strong> Reach for consensus when you need <em>strong, single-source-of-truth agreement</em> &mdash; who is leader, what is the committed order of writes, who holds the lock. Keep the consensus group <strong>small (3–5 nodes)</strong> and put high-volume data <em>outside</em> it, sharded across many independent consensus groups (this is exactly how CockroachDB/Spanner scale).
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     10. DECISION FRAMEWORK
+     ═══════════════════════════════════════════════════════ -->
+<section id="decision">
+  <h2>10. Decision Framework</h2>
+
+  <div class="diagram-box">
+    <svg viewBox="0 0 900 470" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, sans-serif" style="max-width:900px;">
+      <text x="450" y="25" text-anchor="middle" fill="#0969da" font-size="15" font-weight="700">Do You Even Need Consensus? And If So, What?</text>
+
+      <!-- Q1 -->
+      <rect x="250" y="45" width="400" height="40" rx="8" fill="#eef1f5" stroke="#0969da" stroke-width="2"/>
+      <text x="450" y="70" text-anchor="middle" fill="#0969da" font-size="12" font-weight="600">Do you need strong agreement / single source of truth?</text>
+
+      <!-- NO -->
+      <line x1="550" y1="85" x2="720" y2="120" stroke="#c0392b" stroke-width="2" marker-end="url(#arrowGrayD)"/>
+      <text x="660" y="103" fill="#c0392b" font-size="11" font-weight="600">NO</text>
+      <rect x="600" y="120" width="270" height="55" rx="8" fill="#f6f8fa" stroke="#d68000" stroke-width="1.5"/>
+      <text x="735" y="143" text-anchor="middle" fill="#d68000" font-size="12" font-weight="700">Avoid consensus</text>
+      <text x="735" y="161" text-anchor="middle" fill="#656d76" font-size="9">Use AP / eventually-consistent store (Dynamo, Cassandra)</text>
+
+      <!-- YES -->
+      <line x1="350" y1="85" x2="200" y2="120" stroke="#1a7f37" stroke-width="2" marker-end="url(#arrowGreenD)"/>
+      <text x="255" y="103" fill="#1a7f37" font-size="11" font-weight="600">YES</text>
+
+      <!-- Q2 trust -->
+      <rect x="40" y="120" width="340" height="40" rx="8" fill="#eef1f5" stroke="#0969da" stroke-width="1.5"/>
+      <text x="210" y="145" text-anchor="middle" fill="#0969da" font-size="11" font-weight="600">Are all nodes trusted (your datacenter)?</text>
+
+      <!-- trusted NO -> BFT -->
+      <line x1="120" y1="160" x2="90" y2="200" stroke="#c0392b" stroke-width="1.5"/>
+      <text x="80" y="218" text-anchor="middle" fill="#1470cc" font-size="12" font-weight="700">BFT (PBFT)</text>
+      <text x="80" y="234" text-anchor="middle" fill="#656d76" font-size="9">3f+1 nodes, blockchain</text>
+
+      <!-- trusted YES -->
+      <line x1="280" y1="160" x2="300" y2="200" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="300" y="218" text-anchor="middle" fill="#1a7f37" font-size="11" font-weight="700">Crash-fault consensus</text>
+      <text x="300" y="234" text-anchor="middle" fill="#656d76" font-size="9">2f+1 nodes (Raft / Paxos / ZAB)</text>
+
+      <!-- Q3 build or buy -->
+      <rect x="120" y="265" width="360" height="40" rx="8" fill="#eef1f5" stroke="#0969da" stroke-width="1.5"/>
+      <text x="300" y="290" text-anchor="middle" fill="#0969da" font-size="11" font-weight="600">Building it yourself, or using a service?</text>
+      <line x1="300" y1="240" x2="300" y2="265" stroke="#656d76" stroke-width="1" stroke-dasharray="4,3"/>
+
+      <!-- use a service -->
+      <line x1="220" y1="305" x2="180" y2="345" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="170" y="363" text-anchor="middle" fill="#1a7f37" font-size="11" font-weight="700">Use a service</text>
+      <text x="170" y="380" text-anchor="middle" fill="#656d76" font-size="9">etcd / ZooKeeper / Consul</text>
+      <text x="170" y="394" text-anchor="middle" fill="#656d76" font-size="9">(recommended default)</text>
+
+      <!-- embed a library -->
+      <line x1="380" y1="305" x2="420" y2="345" stroke="#d68000" stroke-width="1.5"/>
+      <text x="430" y="363" text-anchor="middle" fill="#c0392b" font-size="11" font-weight="700">Embed a Raft lib</text>
+      <text x="430" y="380" text-anchor="middle" fill="#656d76" font-size="9">hashicorp/raft, dragonboat,</text>
+      <text x="430" y="394" text-anchor="middle" fill="#656d76" font-size="9">etcd-io/raft — never roll your own</text>
+
+      <!-- bottom line -->
+      <rect x="170" y="415" width="560" height="48" rx="10" fill="#eef1f5" stroke="#8250df" stroke-width="1.5"/>
+      <text x="450" y="438" text-anchor="middle" fill="#8250df" font-size="12" font-weight="700">Default answer in an interview:</text>
+      <text x="450" y="455" text-anchor="middle" fill="#656d76" font-size="10">"Use a 3- or 5-node etcd/ZooKeeper for coordination; shard data across many Raft groups to scale."</text>
+
+      <defs>
+        <marker id="arrowGreenD" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#1a7f37"/></marker>
+        <marker id="arrowGrayD" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#656d76"/></marker>
+      </defs>
+    </svg>
+    <div class="caption">Fig 6. Decision tree. The most senior answer is usually "don't build consensus — delegate to a proven system, and only use it where you truly need strong agreement."</div>
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     11. PRODUCTION GOTCHAS
+     ═══════════════════════════════════════════════════════ -->
+<section id="production">
+  <h2>11. Production War Stories &amp; Gotchas</h2>
+
+  <div class="cards">
+    <div class="card">
+      <h3 style="color:var(--raft)">The Even-Number Trap</h3>
+      <p>Someone "adds a node for more reliability," going from 3 to 4. Now you need 3 acks instead of 2 for every write (slower) while still tolerating only 1 failure. Worse, a 2–2 partition has <strong>no majority at all</strong> → total outage.</p>
+      <p><strong>Fix:</strong> Always run odd-sized clusters (3, 5, 7).</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--raft)">Disk fsync Lies</h3>
+      <p>Consensus durability assumes a log entry is <em>truly</em> on stable storage before acking. If <code>fsync</code> is batched/lied about (cheap cloud disks, misconfigured DBs), a leader can ack then lose the entry on crash → <strong>committed data loss</strong>.</p>
+      <p><strong>Fix:</strong> Ensure real <code>fsync</code>; understand your storage's durability semantics.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--candidate)">Election Storms / Flapping Leaders</h3>
+      <p>Election timeout too short relative to network RTT (or GC pauses / CPU starvation) → followers prematurely time out, trigger elections, leadership thrashes, throughput collapses.</p>
+      <p><strong>Fix:</strong> Tune election timeout &gt;&gt; heartbeat interval &gt;&gt; RTT; isolate the consensus process from noisy neighbors; watch GC pauses.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--follower)">The Stale Read</h3>
+      <p>A partitioned old leader still thinks it's leader and serves a read with stale data before noticing it lost quorum.</p>
+      <p><strong>Fix:</strong> Use ReadIndex or leader leases for linearizable reads; explicitly opt into "stale reads" only when you can tolerate them.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--purple)">Cross-Region Latency</h3>
+      <p>Putting consensus members across distant regions means every write pays a cross-region round-trip to reach a majority &mdash; tens to hundreds of ms per write. People are shocked their "fast" DB is slow.</p>
+      <p><strong>Fix:</strong> Keep a quorum within one region, or accept the latency consciously; consider witness/learner replicas that don't vote.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--raft)">The Lost Majority / Wedged Cluster</h3>
+      <p>Lose 2 of 3 nodes (or 3 of 5) and the cluster <strong>cannot elect a leader or accept writes</strong> — it's down by design, not a bug. Recovery from a dead majority is dangerous (risk of data loss).</p>
+      <p><strong>Fix:</strong> Spread nodes across failure domains (AZs); have a tested, documented disaster-recovery runbook.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     12. INTERVIEW CHEAT SHEET
+     ═══════════════════════════════════════════════════════ -->
+<section id="interview">
+  <h2>12. System Design Interview Cheat Sheet</h2>
+
+  <div class="callout success">
+    <strong>The winning pattern:</strong> Don't recite the Raft paper. State the <em>requirement</em> ("we must never have two leaders / we need a consistent committed order"), name the <em>property</em> (majority quorum, leader election, linearizable log), then pick a <em>proven system</em> (etcd/ZooKeeper) and acknowledge the <em>cost</em> (CP — unavailable on minority partition, write latency = round-trip to majority).
+    <br><br>
+    Example: "For leader election among my workers I'll use etcd's lease + compare-and-swap rather than building Raft myself. It gives me linearizable leadership with automatic failover; the trade-off is the etcd cluster must keep a majority up, and elections add a few hundred ms of failover time."
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>If they ask…</th><th>Say…</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>What does consensus guarantee?</td><td>Safety always (no conflicting decisions); liveness as long as a majority is up and reachable</td></tr>
+        <tr><td>Why a majority quorum?</td><td>Any two majorities overlap in ≥1 node, so a new decision always sees the previous one — prevents split brain</td></tr>
+        <tr><td>How many nodes?</td><td>Odd: 3 tolerates 1 failure, 5 tolerates 2. Never even. More nodes = slower writes</td></tr>
+        <tr><td>Raft vs Paxos?</td><td>Same guarantees &amp; perf; Raft is the understandable, leader-centric reformulation — pick a mature Raft impl</td></tr>
+        <tr><td>How does Raft prevent two leaders?</td><td>Terms (monotonic): higher term wins, stale leader steps down; one vote per node per term</td></tr>
+        <tr><td>When is an entry committed?</td><td>Replicated to a majority AND an entry from the leader's current term is committed</td></tr>
+        <tr><td>How do you read consistently?</td><td>ReadIndex or leader lease; otherwise you risk a stale read from a deposed leader</td></tr>
+        <tr><td>CAP classification?</td><td>CP — sacrifices availability on the minority side of a partition to stay consistent</td></tr>
+        <tr><td>Crash vs Byzantine?</td><td>Raft/Paxos tolerate crashes (2f+1); BFT tolerates malicious nodes (3f+1) — only needed across untrusted parties</td></tr>
+        <tr><td>How to scale consensus?</td><td>Don't grow one group; shard data across many small Raft groups (CockroachDB/Spanner model)</td></tr>
+        <tr><td>Real systems to name-drop?</td><td>etcd (K8s), ZooKeeper, Consul, CockroachDB, TiKV, Spanner, Kafka KRaft</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     13. REFERENCES
+     ═══════════════════════════════════════════════════════ -->
+<section id="references">
+  <h2>13. References</h2>
+
+  <ul style="color:var(--text2); padding-left:1.5rem;">
+    <li><a href="https://raft.github.io/raft.pdf">Ongaro &amp; Ousterhout — <em>In Search of an Understandable Consensus Algorithm (Raft)</em></a></li>
+    <li><a href="https://thesecretlivesofdata.com/raft/">The Secret Lives of Data — Raft visualization</a></li>
+    <li><a href="https://lamport.azurewebsites.net/pubs/paxos-simple.pdf">Lamport — <em>Paxos Made Simple</em></a></li>
+    <li><em>Designing Data-Intensive Applications</em>, Chapter 9: Consistency and Consensus</li>
+    <li>Castro &amp; Liskov — <em>Practical Byzantine Fault Tolerance (PBFT)</em></li>
+  </ul>
+</section>
+
+<hr class="section-divider">
+
+<!-- ═══════════════════════════════════════════════════════
+     14. APPENDIX: FULL COMPARISON MATRIX
+     ═══════════════════════════════════════════════════════ -->
+<section id="comparison">
+  <h2>14. Appendix: Full Comparison Matrix</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Dimension</th>
+          <th style="color:var(--raft)">Raft</th>
+          <th style="color:var(--paxos)">Multi-Paxos</th>
+          <th style="color:var(--zab)">ZAB</th>
+          <th style="color:var(--byz)">PBFT (BFT)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Fault model</td><td>Crash / network</td><td>Crash / network</td><td>Crash / network</td><td>Byzantine (malicious)</td></tr>
+        <tr><td>Nodes for f failures</td><td>2f+1</td><td>2f+1</td><td>2f+1</td><td>3f+1</td></tr>
+        <tr><td>Leader</td><td>Strong single leader</td><td>Stable leader (optimization)</td><td>Single leader</td><td>Primary (rotates on view change)</td></tr>
+        <tr><td>Logical clock</td><td>Term</td><td>Proposal number / ballot</td><td>Epoch</td><td>View number</td></tr>
+        <tr><td>Steady-state cost</td><td>1 round-trip to majority</td><td>1 round-trip to majority</td><td>1 round-trip to majority</td><td>O(n²) messages per request</td></tr>
+        <tr><td>Understandability</td><td>High (designed for it)</td><td>Low (notoriously hard)</td><td>Medium</td><td>Low</td></tr>
+        <tr><td>Membership change</td><td>Joint consensus / single-server</td><td>Possible, less prescribed</td><td>Supported</td><td>View change protocol</td></tr>
+        <tr><td>Reads</td><td>ReadIndex / lease</td><td>Lease-based</td><td>Local on followers (with sync)</td><td>Quorum reads</td></tr>
+        <tr><td>CAP class</td><td>CP</td><td>CP</td><td>CP</td><td>CP</td></tr>
+        <tr><td>Used by</td><td>etcd, Consul, CockroachDB, TiKV, Kafka KRaft</td><td>Google Chubby, Spanner</td><td>ZooKeeper (Hadoop, legacy Kafka)</td><td>Hyperledger, blockchains</td></tr>
+        <tr><td>Year</td><td>2014</td><td>1998 (Paxos)</td><td>~2008</td><td>1999</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════
+     FOOTER
+     ═══════════════════════════════════════════════════════ -->
+<footer>
+  <p>System Design Knowledge Study — Consensus Deep Dive</p>
+  <p>Raft &bull; Paxos &bull; Multi-Paxos &bull; ZAB &bull; Viewstamped Replication &bull; PBFT</p>
+  <p style="margin-top:0.5rem;">Covers leader election, log replication, quorums, safety/liveness, FLP, CAP, and production trade-offs at a senior SWE level.</p>
+</footer>
+
+</div>
+</body>
+</html>
